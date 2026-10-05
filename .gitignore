@@ -39,6 +39,18 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Firebase per-developer config. google-services.json holds an API key bound to
+# this Firebase project and is downloaded per machine, so it stays out of the
+# repo.
+#
+# lib/firebase_options.dart is deliberately NOT ignored: FlutterFire generates it
+# with project-identifying but non-secret values, and checking it in is the whole
+# point of using it as the config source.
+android/app/google-services.json
+**/google-services.json
+**/GoogleService-Info.plist
+.firebase/
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
