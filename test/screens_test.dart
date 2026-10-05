@@ -6,6 +6,8 @@ import 'package:highlanders_coffee/features/admin/admin_dashboard_screen.dart';
 import 'package:highlanders_coffee/features/admin/sections/admin_overview_section.dart';
 import 'package:highlanders_coffee/features/checkout/checkout_screen.dart';
 import 'package:highlanders_coffee/features/home/widgets/menu_item_card.dart';
+import 'package:highlanders_coffee/features/home/widgets/promo_carousel.dart';
+import 'package:highlanders_coffee/features/home/widgets/promo_widgets.dart';
 import 'package:highlanders_coffee/features/menu/menu_item_detail_screen.dart';
 import 'package:highlanders_coffee/features/order_tracking/order_success_screen.dart';
 import 'package:highlanders_coffee/features/order_tracking/order_tracking_screen.dart';
@@ -110,9 +112,71 @@ void main() {
 
       expect(find.text('Lumban, Laguna'), findsOneWidget);
       expect(find.text('Categories'), findsOneWidget);
-      expect(find.text('Special Offers'), findsOneWidget);
+      expect(find.text('Best Offer'), findsOneWidget);
+
+      // The old secondary promo row is gone, absorbed into the carousel.
+      expect(find.text('Special Offers'), findsNothing);
+      expect(find.byType(OfferTiles), findsNothing);
 
       await scrollToEnd(tester, find.byType(CustomScrollView).first);
+    });
+
+    testWidgets('best offer carousel rotates and wraps', (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      final PromoCarousel carousel = tester.widget<PromoCarousel>(
+        find.byType(PromoCarousel),
+      );
+      // Three promos: the NEW HERE hero plus the two former offer tiles.
+      expect(carousel.promos.length, 3);
+      expect(carousel.interval, const Duration(seconds: 5));
+
+      // Asserted on the controller's page rather than on visible text: PageView
+      // keeps the adjacent slide in the tree, so both titles are findable at any
+      // moment and a findsOneWidget check would pass or fail for the wrong
+      // reason.
+      final PageController controller =
+          tester.widget<PageView>(find.byType(PageView)).controller!;
+
+      expect(controller.page, moreOrLessEquals(0));
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(controller.page, moreOrLessEquals(1));
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(controller.page, moreOrLessEquals(2));
+
+      // Wrap: one more tick returns to the first slide rather than throwing.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(controller.page, moreOrLessEquals(0));
+
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('search sits below the categories and above the list',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      final double categories = tester.getRect(find.text('Categories')).top;
+      final double search = tester.getRect(find.byType(TextField).first).top;
+
+      // Search moved down from under the location header to sit directly above
+      // the product list, below the category pills.
+      expect(search, greaterThan(categories));
+
+      await tester.enterText(find.byType(TextField).first, 'kopi');
+      await tester.pumpAndSettle();
+
+      // Searching hides the carousel block, which unmounts it and cancels the
+      // timer — no animation against a disposed controller.
+      expect(find.byType(PromoCarousel), findsNothing);
+      expect(find.text('Search results'), findsOneWidget);
+      expect(find.text('Kopi Filipino'), findsOneWidget);
     });
 
     testWidgets('orders, active tab', (WidgetTester tester) async {

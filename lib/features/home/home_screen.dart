@@ -14,10 +14,10 @@ import '../../state/catalog_provider.dart';
 import '../../state/session_provider.dart';
 import '../menu/menu_item_detail_screen.dart';
 import 'widgets/menu_item_card.dart';
-import 'widgets/promo_widgets.dart';
+import 'widgets/promo_carousel.dart';
 
-/// Home screen: location header, search, hero promo, category pills,
-/// special offers and the café's menu.
+/// Home screen: location header, a rotating "Best Offer" carousel, category
+/// pills, search and the café's menu.
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
@@ -33,39 +33,38 @@ class HomeScreen extends StatelessWidget {
         child: CustomScrollView(
           slivers: <Widget>[
             const SliverToBoxAdapter(child: _LocationHeader()),
-            const SliverToBoxAdapter(child: _SearchBar()),
 
             if (!searching) ...<Widget>[
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(BwSpacing.gutter, BwSpacing.lg, BwSpacing.gutter, 0),
-                sliver: SliverToBoxAdapter(
-                  child: PromoHeroBanner(
-                    promo: catalog.heroPromo ?? catalog.promos.first,
-                    onCta: () => _openFirstItem(context, catalog),
+              // Best Offer: one rotating strip holding every promo. The former
+              // "Special Offers" header and offer tiles are gone — the carousel
+              // replaces both rather than sitting above them.
+              const SliverToBoxAdapter(
+                child: BwSectionHeader(
+                  title: 'Best Offer',
+                  padding: EdgeInsets.fromLTRB(
+                    BwSpacing.gutter,
+                    BwSpacing.lg,
+                    BwSpacing.gutter,
+                    BwSpacing.md,
                   ),
                 ),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: BwSpacing.xl)),
+              SliverToBoxAdapter(
+                child: PromoCarousel(
+                  promos: catalog.promos,
+                  onPromoTap: (Promo p) => _showPromoSheet(context, catalog, promo: p),
+                ),
+              ),
               const SliverToBoxAdapter(child: BwSectionHeader(title: 'Categories')),
               SliverToBoxAdapter(
                 child: _CategoryCarousel(catalog: catalog),
               ),
-              SliverToBoxAdapter(
-                child: BwSectionHeader(
-                  title: 'Special Offers',
-                  actionLabel: 'See all',
-                  onAction: () => _showPromoSheet(context, catalog),
-                ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: BwSpacing.gutter),
-                sliver: SliverToBoxAdapter(
-                  child: OfferTiles(
-                    promos: catalog.offerTiles,
-                    onTap: (Promo p) => _showPromoSheet(context, catalog, promo: p),
-                  ),
-                ),
-              ),
+
+              // Search sits below the categories, directly above the list it
+              // filters. Searching hides the whole block above, which also
+              // unmounts the carousel and stops its timer.
+              const SliverToBoxAdapter(child: _SearchBar()),
+
               SliverToBoxAdapter(
                 child: BwSectionHeader(
                   title: catalog.isOpen ? 'Open Now' : 'Menu',
@@ -73,6 +72,7 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ] else
+              const SliverToBoxAdapter(child: _SearchBar()),
               const SliverToBoxAdapter(
                 child: BwSectionHeader(
                   title: 'Search results',
@@ -109,15 +109,6 @@ class HomeScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-
-  static void _openFirstItem(BuildContext context, CatalogProvider catalog) {
-    final List<MenuItem> bestsellers = catalog.bestsellers;
-    final MenuItem target = bestsellers.isNotEmpty ? bestsellers.first : catalog.allItems.first;
-
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => MenuItemDetailScreen(item: target)),
     );
   }
 
