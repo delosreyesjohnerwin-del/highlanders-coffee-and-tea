@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/bw_brand.dart';
 import '../../core/theme/bw_colors.dart';
 import '../../core/theme/bw_metrics.dart';
 import '../../core/widgets/bw_button.dart';
@@ -394,7 +395,12 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// Solid black rounded square holding the coffee glyph.
+/// The brand mark, sitting directly on the page.
+///
+/// Deliberately not sitting in a tile. The mark is a dark green wordmark on a
+/// transparent ground, so the previous black rounded square would have put it at
+/// roughly 1.9:1 contrast. Straight onto the white page it reads at about 11:1
+/// and matches the launcher icon exactly.
 class _Brandmark extends StatelessWidget {
   const _Brandmark();
 
@@ -402,15 +408,11 @@ class _Brandmark extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: <Widget>[
-        Container(
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            color: BwColors.inverse,
-            borderRadius: BorderRadius.circular(BwRadius.card),
-          ),
-          child: const Icon(Icons.local_cafe_rounded, size: 30, color: BwColors.onInverse),
-        ),
+        // Width is derived to hold the mark at the same 62px height the old
+        // black tile occupied (62 * 610/476 = 79.4). Growing the header pushed the
+        // sign-up row out of the ListView's lazily-built viewport at 360dp,
+        // which silently dropped it from the layout test.
+        const BwBrandmark(width: 79.4),
         const SizedBox(height: BwSpacing.lg),
         const Text(
           'Highlanders',

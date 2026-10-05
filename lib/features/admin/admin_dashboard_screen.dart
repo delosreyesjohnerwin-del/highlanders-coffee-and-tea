@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/bw_brand.dart';
 import '../../core/theme/bw_colors.dart';
 import '../../core/theme/bw_metrics.dart';
 import '../../core/widgets/bw_badge.dart';
@@ -260,11 +261,14 @@ class _RailBrandmark extends StatelessWidget {
       child: Container(
         width: 38,
         height: 38,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: BwColors.inverse,
           borderRadius: BorderRadius.circular(BwRadius.chip),
         ),
-        child: const Icon(Icons.local_cafe_rounded, size: 18, color: BwColors.onInverse),
+        // Knocked out to white: the brand green on this black tile would land at
+        // roughly 1.9:1 and be effectively invisible.
+        child: const BwBrandmark(width: 28, inverted: true),
       ),
     );
   }
@@ -384,11 +388,14 @@ class _AdminDrawer extends StatelessWidget {
                   Container(
                     width: 40,
                     height: 40,
+                    alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: BwColors.onInverse,
                       borderRadius: BorderRadius.circular(BwRadius.chip),
                     ),
-                    child: const Icon(Icons.local_cafe_rounded, size: 20, color: BwColors.inverse),
+                    // This tile is white, so the brand green is used as-is and
+                    // keeps its colour here.
+                    child: const BwBrandmark(width: 30),
                   ),
                   const SizedBox(width: BwSpacing.md),
                   Expanded(

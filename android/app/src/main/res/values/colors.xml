@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        The app is a strictly white monochrome design and does not respond to the
+        system dark-mode setting, so the launcher icon stays on white in both
+        light and dark mode.
+    -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
