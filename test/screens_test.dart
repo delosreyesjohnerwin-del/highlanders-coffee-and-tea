@@ -607,6 +607,49 @@ void main() {
       expect(find.text(original.title), findsNothing);
     });
 
+    testWidgets('a new promo can be created and lands in the carousel',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.promos,
+      ));
+
+      final int before = MockData.promos.length;
+
+      await tester.tap(find.byType(BwFab));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Add promotion'), findsWidgets);
+      // Nothing pre-filled from another promo — three of the six fields start
+      // empty on a new promo and the rest must not carry the last one's text.
+      expect(find.widgetWithText(TextFormField, MockData.promos.first.title), findsNothing);
+
+      // The code is auto-suggested rather than left blank: a blank code collides
+      // with every other blank promo the moment it is saved.
+      final Finder code = find.byWidgetPredicate(
+        (Widget w) => w is TextFormField && w.controller?.text.startsWith('PROMO') == true,
+      );
+      expect(code, findsOneWidget);
+      expect(tester.widget<TextField>(find.descendant(of: code, matching: find.byType(TextField))).enabled, isTrue,
+          reason: 'a new promo needs a typeable code; only an existing one locks it');
+
+      await tester.enterText(code, 'TAPOS25');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Headline'), 'Tapos Anniversary');
+      await tester.pumpAndSettle();
+      await tester.enterText(find.widgetWithText(TextFormField, 'Sub-copy'), 'Free upgrade on any brewed drink');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Add promotion'));
+      await tester.pumpAndSettle();
+
+      // In the admin list, and counted. Not asserted on the customer side, which
+      // is a different provider tree.
+      expect(find.text('Tapos Anniversary'), findsOneWidget);
+      expect(find.text('TAPOS25'), findsOneWidget);
+      expect(find.text('Live (${before + 1})'), findsOneWidget);
+      expect(find.text('All (${before + 1})'), findsOneWidget);
+    });
+
     testWidgets('promo delete asks first, then removes the card',
         (WidgetTester tester) async {
       await usePhone(tester);

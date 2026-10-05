@@ -42,85 +42,98 @@ class _AdminPromosSectionState extends State<AdminPromosSection> {
 
     final int live = all.where((Promo p) => p.active).length;
 
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(top: BwSpacing.md),
-          child: SizedBox(
-            height: 40,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: BwSpacing.gutter),
+    // The FAB is not an optional extra. Creating a promotion is the whole reason
+    // this section exists -- an owner who can only edit and delete what is already
+    // there still has to open the Firebase console to put the next offer up, which
+    // is the problem this section was added to solve. Same affordance as
+    // Inventory's "Add item", so the two merchandising screens behave alike.
+    return Scaffold(
+      backgroundColor: BwColors.bg,
+      floatingActionButton: BwFab(
+        label: 'Add promotion',
+        icon: Icons.add_rounded,
+        onPressed: () => showPromoFormSheet(context),
+      ),
+      body: Column(
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: BwSpacing.md),
+            child: SizedBox(
+              height: 40,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: BwSpacing.gutter),
+                children: <Widget>[
+                  _PromoChip(
+                    label: 'All (${all.length})',
+                    isSelected: _activeOnly == null,
+                    onTap: () => setState(() => _activeOnly = null),
+                  ),
+                  _PromoChip(
+                    label: 'Live ($live)',
+                    isSelected: _activeOnly == true,
+                    onTap: () => setState(() => _activeOnly = true),
+                  ),
+                  _PromoChip(
+                    label: 'Paused (${all.length - live})',
+                    isSelected: _activeOnly == false,
+                    onTap: () => setState(() => _activeOnly = false),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: BwSpacing.gutter,
+              vertical: BwSpacing.md,
+            ),
+            child: Row(
               children: <Widget>[
-                _PromoChip(
-                  label: 'All (${all.length})',
-                  isSelected: _activeOnly == null,
-                  onTap: () => setState(() => _activeOnly = null),
+                Expanded(
+                  child: AdminStat(
+                    label: 'In the carousel',
+                    value: '$live',
+                    icon: Icons.local_offer_outlined,
+                  ),
                 ),
-                _PromoChip(
-                  label: 'Live ($live)',
-                  isSelected: _activeOnly == true,
-                  onTap: () => setState(() => _activeOnly = true),
-                ),
-                _PromoChip(
-                  label: 'Paused (${all.length - live})',
-                  isSelected: _activeOnly == false,
-                  onTap: () => setState(() => _activeOnly = false),
+                const SizedBox(width: BwSpacing.sm),
+                Expanded(
+                  child: AdminStat(
+                    // "Not running" rather than "Paused", because the same word is
+                    // the badge on each card and the filter chip. Three identical
+                    // labels on one screen makes the stat untestable and is just
+                    // as confusing to the person reading it.
+                    label: 'Not running',
+                    value: '${all.length - live}',
+                    icon: Icons.pause_circle_outline_rounded,
+                  ),
                 ),
               ],
             ),
           ),
-        ),
 
-        Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: BwSpacing.gutter,
-            vertical: BwSpacing.md,
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: AdminStat(
-                  label: 'In the carousel',
-                  value: '$live',
-                  icon: Icons.local_offer_outlined,
-                ),
-              ),
-              const SizedBox(width: BwSpacing.sm),
-              Expanded(
-                child: AdminStat(
-                  // "Not running" rather than "Paused", because the same word is
-                  // the badge on each card and the filter chip. Three identical
-                  // labels on one screen makes the stat untestable and is just
-                  // as confusing to the person reading it.
-                  label: 'Not running',
-                  value: '${all.length - live}',
-                  icon: Icons.pause_circle_outline_rounded,
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        Expanded(
-          child: promos.isEmpty
-              ? const AdminEmptyState(
-                  message: 'No promotions here yet.',
-                  icon: Icons.local_offer_outlined,
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(
-                    BwSpacing.gutter,
-                    0,
-                    BwSpacing.gutter,
-                    BwSpacing.xxl,
+          Expanded(
+            child: promos.isEmpty
+                ? const AdminEmptyState(
+                    message: 'No promotions here yet.',
+                    icon: Icons.local_offer_outlined,
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(
+                      BwSpacing.gutter,
+                      0,
+                      BwSpacing.gutter,
+                      BwSpacing.xxl,
+                    ),
+                    itemCount: promos.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: BwSpacing.sm),
+                    itemBuilder: (BuildContext context, int i) => _PromoCard(promo: promos[i]),
                   ),
-                  itemCount: promos.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: BwSpacing.sm),
-                  itemBuilder: (BuildContext context, int i) => _PromoCard(promo: promos[i]),
-                ),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
