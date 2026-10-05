@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlanders_coffee/app.dart';
 import 'package:highlanders_coffee/core/firebase/firebase_bootstrap.dart';
+import 'package:highlanders_coffee/core/theme/bw_brand.dart';
 import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/data/models/staff.dart';
@@ -101,17 +102,23 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // The mark is the whole header now: the lettering is baked into the PNG,
+      // so there is no text duplicated underneath it.
+      expect(find.byType(BwBrandmark), findsOneWidget);
+      expect(find.text('Highlanders'), findsNothing);
+      expect(find.text('Coffee & Tea'), findsNothing);
+
       // Brandmark + the exact subtitle from the spec.
-      expect(find.text('Highlanders'), findsOneWidget);
-      expect(find.text('Coffee & Tea'), findsOneWidget);
       expect(
-        find.text('Welcome back! Select a role or sign in.'),
+        find.text('Welcome back! Sign in to continue.'),
         findsOneWidget,
       );
 
-      // Role toggle, both roles labelled.
-      expect(find.text('Customer'), findsOneWidget);
-      expect(find.text('Admin'), findsOneWidget);
+      // No role switcher: the role comes from users/{uid} on the real backend,
+      // so the login screen must not offer a way to choose one.
+      expect(find.text('Customer'), findsNothing);
+      expect(find.text('Admin'), findsNothing);
+      expect(find.text('SIGN IN AS'), findsNothing);
 
       // Google is the primary action, above the email form.
       expect(find.text('Continue with Google'), findsOneWidget);
@@ -122,6 +129,47 @@ void main() {
       expect(find.text('Log In'), findsOneWidget);
       expect(find.text('Sign Up'), findsOneWidget);
       expect(find.text("Don't have an account?"), findsOneWidget);
+    });
+
+    testWidgets('parks the form at the bottom and keeps the mark prominent',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await tester.pumpWidget(HighlandersApp(home: const LoginScreen()));
+      await tester.pumpAndSettle();
+
+      final Size screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(screen, const Size(360, 780));
+
+      // Mark: large, centred, and anchored to the top of the page.
+      final Rect mark = tester.getRect(find.byType(BwBrandmark));
+      expect(mark.width, greaterThan(150));
+      expect(mark.center.dx, closeTo(180, 0.5));
+      expect(mark.top, lessThan(80));
+
+      // Form: below the mark, not beside it.
+      expect(
+        tester.getRect(find.text('Continue with Google')).top,
+        greaterThan(mark.bottom),
+      );
+
+      // Footer: pinned to the bottom edge, clear of the Sign Up row above it.
+      // This is the assertion that fails if the Spacer ever collapses to zero,
+      // which is exactly what happens without IntrinsicHeight above it.
+      final Rect footer =
+          tester.getRect(find.text('Highlanders Coffee & Tea · Lumban, Laguna'));
+      expect(footer.bottom, greaterThan(screen.height - 36));
+      expect(footer.bottom, lessThanOrEqualTo(screen.height));
+      expect(
+        footer.top,
+        greaterThan(tester.getRect(find.text('Sign Up')).bottom),
+      );
+
+      // Nothing overflows, and the whole thing fits without scrolling.
+      expect(tester.takeException(), isNull);
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      expect(scrollable.position.maxScrollExtent, 0);
     });
 
     testWidgets('password visibility toggles', (WidgetTester tester) async {
@@ -154,29 +202,14 @@ void main() {
       expect(find.text('Password must be at least 6 characters.'), findsOneWidget);
     });
 
-    testWidgets('role toggle pre-fills the demo account for that role',
-        (WidgetTester tester) async {
-      await usePhone(tester);
-      await tester.pumpWidget(HighlandersApp(home: const LoginScreen()));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Admin'));
-      await tester.pumpAndSettle();
-
-      final String email = tester
-          .widget<TextFormField>(find.byType(TextFormField).first)
-          .controller!
-          .text;
-      expect(email, 'admin@highlanderscoffee.ph');
-    });
-
     testWidgets('sign up is reachable and validates',
         (WidgetTester tester) async {
       await usePhone(tester);
       await tester.pumpWidget(HighlandersApp(home: const LoginScreen()));
       await tester.pumpAndSettle();
 
-      // Below the fold at 360dp, so it has to be scrolled to first.
+      // Still below the fold at 360dp even after the role switcher was removed,
+      // so it has to be scrolled to first. Measured, not assumed.
       await tapVisible(tester, find.text('Sign Up'));
 
       expect(find.text('Join Highlanders'), findsOneWidget);

@@ -6,28 +6,8 @@ import '../../core/theme/bw_colors.dart';
 import '../../core/theme/bw_metrics.dart';
 import '../../core/widgets/bw_button.dart';
 import '../../core/widgets/bw_card.dart';
-import '../../core/widgets/bw_segment.dart';
-import '../../data/models/order.dart';
-import '../../services/mock_auth_service.dart';
 import '../../state/session_provider.dart';
 import 'sign_up_screen.dart';
-
-/// Which role the user is signing in as.
-///
-/// On the real Firebase backend this is ignored — the role comes from
-/// `users/{uid}`. It exists so the admin and customer panels can be exercised
-/// without two provisioned accounts.
-enum LoginRole {
-  customer('Customer', Icons.person_outline_rounded),
-  admin('Admin', Icons.admin_panel_settings_outlined);
-
-  const LoginRole(this.label, this.icon);
-
-  final String label;
-  final IconData icon;
-
-  UserRole get asUserRole => this == LoginRole.admin ? UserRole.admin : UserRole.customer;
-}
 
 /// Monochrome login screen.
 ///
@@ -46,7 +26,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _password = TextEditingController();
 
-  LoginRole _role = LoginRole.customer;
   bool _obscure = true;
   bool _rememberMe = true;
 
@@ -55,18 +34,6 @@ class _LoginScreenState extends State<LoginScreen> {
     _email.dispose();
     _password.dispose();
     super.dispose();
-  }
-
-  /// Swaps the role and pre-fills the matching demo address, so the admin
-  /// panel can be reached in two taps instead of by typing.
-  void _setRole(LoginRole role) {
-    setState(() => _role = role);
-
-    final String demo = MockAuthService.demoIdentityFor(role.asUserRole).email;
-    if (_email.text.trim() != demo) {
-      _email.text = demo;
-      _email.selection = TextSelection.collapsed(offset: demo.length);
-    }
   }
 
   void _toggleObscure() => setState(() => _obscure = !_obscure);
@@ -193,199 +160,227 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Form(
               key: _formKey,
               autovalidateMode: AutovalidateMode.onUserInteraction,
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(
-                  BwSpacing.xl,
-                  BwSpacing.xl,
-                  BwSpacing.xl,
-                  BwSpacing.xxl,
-                ),
-                children: <Widget>[
-                  const _Brandmark(),
-                  const SizedBox(height: BwSpacing.xl),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints viewport) {
+                  // A phone viewport is a finite height. The guard is so this
+                  // still lays out rather than asserting if it ever lands in an
+                  // unbounded parent.
+                  final double minHeight =
+                      viewport.maxHeight.isFinite ? viewport.maxHeight : 0.0;
 
-                  const Text(
-                    'Welcome back! Select a role or sign in.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 15, height: 1.45, color: BwColors.textMuted),
-                  ),
-                  const SizedBox(height: BwSpacing.xxl),
-
-                  // --- role switcher -------------------------------------
-                  const Text(
-                    'SIGN IN AS',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.1,
-                      color: BwColors.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: BwSpacing.sm),
-                  BwSegmented<LoginRole>(
-                    segments: LoginRole.values,
-                    selected: _role,
-                    onChanged: busy ? (_) {} : _setRole,
-                    labelBuilder: (LoginRole r) => r.label,
-                  ),
-                  const SizedBox(height: BwSpacing.xxl),
-
-                  // --- primary action ------------------------------------
-                  BwButton(
-                    label: 'Continue with Google',
-                    icon: Icons.g_mobiledata_rounded,
-                    onPressed: busy ? null : _submitGoogle,
-                    height: 54,
-                  ),
-                  const SizedBox(height: BwSpacing.md),
-                  const _OrDivider(),
-                  const SizedBox(height: BwSpacing.xl),
-
-                  // --- credentials --------------------------------------
-                  TextFormField(
-                    controller: _email,
-                    enabled: !busy,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    autocorrect: false,
-                    style: const TextStyle(fontSize: 15, color: BwColors.text),
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      hintText: 'you@email.com',
-                      prefixIcon: Icon(Icons.mail_outline_rounded, size: 19),
-                    ),
-                    validator: (String? value) {
-                      final String v = (value ?? '').trim();
-                      if (v.isEmpty) return 'Enter your email address.';
-                      if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(v)) {
-                        return 'That email address looks invalid.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: BwSpacing.md),
-                  TextFormField(
-                    controller: _password,
-                    enabled: !busy,
-                    obscureText: _obscure,
-                    textInputAction: TextInputAction.done,
-                    style: const TextStyle(fontSize: 15, color: BwColors.text),
-                    onFieldSubmitted: (_) => busy ? null : _submitPassword(),
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'At least 6 characters',
-                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 19),
-                      suffixIcon: IconButton(
-                        onPressed: _toggleObscure,
-                        icon: Icon(
-                          _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                          size: 19,
-                        ),
-                      ),
-                    ),
-                    validator: (String? value) {
-                      if ((value ?? '').isEmpty) return 'Enter your password.';
-                      if (value!.length < 6) return 'Password must be at least 6 characters.';
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: BwSpacing.md),
-
-                  // --- remember me + forgot -------------------------------
-                  Row(
-                    children: <Widget>[
-                      SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: Checkbox(
-                          value: _rememberMe,
-                          onChanged: busy
-                              ? null
-                              : (bool? v) => setState(() => _rememberMe = v ?? false),
-                        ),
-                      ),
-                      const SizedBox(width: BwSpacing.sm),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: busy
-                              ? null
-                              : () => setState(() => _rememberMe = !_rememberMe),
-                          behavior: HitTestBehavior.opaque,
-                          child: Text(
-                            'Remember me',
-                            style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w500,
-                              color: busy ? BwColors.disabled : BwColors.text,
+                  return SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: BwSpacing.xl),
+                    // minHeight + IntrinsicHeight is the only combination that
+                    // both stretches to the viewport and keeps a Column's flex
+                    // children meaningful: ConstrainedBox hands the Column a
+                    // minHeight with no max, so a Spacer would resolve to zero on
+                    // its own, and IntrinsicHeight is what gives the Column a
+                    // bounded height to divide up.
+                    //
+                    // Two behaviours fall out of it. Where the content is
+                    // shorter than the screen, the Spacer takes the slack and
+                    // parks the form against the bottom. Where it is taller —
+                    // a short device, or a large system font — the column grows
+                    // past minHeight, the Spacer collapses to zero, and this
+                    // scrolls instead of overflowing.
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: minHeight),
+                      child: IntrinsicHeight(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            const Padding(
+                              padding: EdgeInsets.only(
+                                top: BwSpacing.lg,
+                                bottom: BwSpacing.md,
+                              ),
+                              child: _Brandmark(),
                             ),
-                          ),
+
+                            // Everything left over between the mark and the
+                            // form goes here. That is the whole trick.
+                            const Spacer(),
+
+                            const Text(
+                              'Welcome back! Sign in to continue.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 15,
+                                height: 1.45,
+                                color: BwColors.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: BwSpacing.lg),
+
+                            // --- primary action ------------------------------------
+                            BwButton(
+                              label: 'Continue with Google',
+                              icon: Icons.g_mobiledata_rounded,
+                              onPressed: busy ? null : _submitGoogle,
+                              height: 54,
+                            ),
+                            const SizedBox(height: BwSpacing.md),
+                            const _OrDivider(),
+                            const SizedBox(height: BwSpacing.xl),
+
+                            // --- credentials --------------------------------------
+                            TextFormField(
+                              controller: _email,
+                              enabled: !busy,
+                              keyboardType: TextInputType.emailAddress,
+                              textInputAction: TextInputAction.next,
+                              autocorrect: false,
+                              style: const TextStyle(fontSize: 15, color: BwColors.text),
+                              decoration: const InputDecoration(
+                                labelText: 'Email',
+                                hintText: 'you@email.com',
+                                prefixIcon: Icon(Icons.mail_outline_rounded, size: 19),
+                              ),
+                              validator: (String? value) {
+                                final String v = (value ?? '').trim();
+                                if (v.isEmpty) return 'Enter your email address.';
+                                if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(v)) {
+                                  return 'That email address looks invalid.';
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: BwSpacing.md),
+                            TextFormField(
+                              controller: _password,
+                              enabled: !busy,
+                              obscureText: _obscure,
+                              textInputAction: TextInputAction.done,
+                              style: const TextStyle(fontSize: 15, color: BwColors.text),
+                              onFieldSubmitted: (_) => busy ? null : _submitPassword(),
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                hintText: 'At least 6 characters',
+                                prefixIcon: const Icon(Icons.lock_outline_rounded, size: 19),
+                                suffixIcon: IconButton(
+                                  onPressed: _toggleObscure,
+                                  icon: Icon(
+                                    _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                                    size: 19,
+                                  ),
+                                ),
+                              ),
+                              validator: (String? value) {
+                                if ((value ?? '').isEmpty) return 'Enter your password.';
+                                if (value!.length < 6) return 'Password must be at least 6 characters.';
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: BwSpacing.md),
+
+                            // --- remember me + forgot -------------------------------
+                            Row(
+                              children: <Widget>[
+                                SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: Checkbox(
+                                    value: _rememberMe,
+                                    onChanged: busy
+                                        ? null
+                                        : (bool? v) => setState(() => _rememberMe = v ?? false),
+                                  ),
+                                ),
+                                const SizedBox(width: BwSpacing.sm),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: busy
+                                        ? null
+                                        : () => setState(() => _rememberMe = !_rememberMe),
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Text(
+                                      'Remember me',
+                                      style: TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: busy ? BwColors.disabled : BwColors.text,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: busy ? null : _forgotPassword,
+                                  child: const Text('Forgot password?'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: BwSpacing.lg),
+
+                            BwButton(
+                              label: 'Log In',
+                              onPressed: busy ? null : _submitPassword,
+                              height: 54,
+                            ),
+
+                            if (busy) ...<Widget>[
+                              const SizedBox(height: BwSpacing.lg),
+                              const Center(
+                                child: SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: BwSpacing.lg),
+
+                            // A Wrap, not a Row: the prompt plus the button is the
+                            // widest line on this screen, and a fixed-width test font
+                            // renders "Don't have an account?" at ~300px on its own.
+                            // Wrapping keeps both readable at 320dp and lets the button
+                            // drop to its own line when space is tight.
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: BwSpacing.xs,
+                              children: <Widget>[
+                                Text(
+                                  "Don't have an account?",
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    color: busy ? BwColors.disabled : BwColors.textMuted,
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: busy ? null : _openSignUp,
+                                  child: const Text('Sign Up'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: BwSpacing.sm),
+
+                            if (backendNote.isNotEmpty) _BackendNote(message: backendNote),
+
+                            const SizedBox(height: BwSpacing.lg),
+
+                            // --- footer --------------------------------------------
+                            //
+                            // The last child of the column, so it lands on the bottom of
+                            // the viewport whenever the content fits — which is what keeps
+                            // it from ever sitting underneath the Log In button or the
+                            // Sign Up row above it.
+                            const SizedBox(height: BwSpacing.md),
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: BwSpacing.md),
+                              child: Center(
+                                child: Text(
+                                  'Highlanders Coffee & Tea · Lumban, Laguna',
+                                  style: TextStyle(fontSize: 11.5, color: BwColors.textMuted),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      TextButton(
-                        onPressed: busy ? null : _forgotPassword,
-                        child: const Text('Forgot password?'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: BwSpacing.lg),
-
-                  BwButton(
-                    label: 'Log In',
-                    onPressed: busy ? null : _submitPassword,
-                    height: 54,
-                  ),
-
-                  if (busy) ...<Widget>[
-                    const SizedBox(height: BwSpacing.lg),
-                    const Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
                     ),
-                  ],
-
-                  const SizedBox(height: BwSpacing.xl),
-
-                  // --- footer --------------------------------------------
-                  //
-                  // A Wrap, not a Row: the prompt plus the button is the
-                  // widest line on this screen, and a fixed-width test font
-                  // renders "Don't have an account?" at ~300px on its own.
-                  // Wrapping keeps both readable at 320dp and lets the button
-                  // drop to its own line when space is tight.
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: BwSpacing.xs,
-                    children: <Widget>[
-                      Text(
-                        "Don't have an account?",
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          color: busy ? BwColors.disabled : BwColors.textMuted,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: busy ? null : _openSignUp,
-                        child: const Text('Sign Up'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: BwSpacing.sm),
-
-                  if (backendNote.isNotEmpty) _BackendNote(message: backendNote),
-
-                  const SizedBox(height: BwSpacing.lg),
-                  const Center(
-                    child: Text(
-                      'Highlanders Coffee & Tea · Lumban, Laguna',
-                      style: TextStyle(fontSize: 11.5, color: BwColors.textMuted),
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ),
@@ -401,40 +396,26 @@ class _LoginScreenState extends State<LoginScreen> {
 /// transparent ground, so the previous black rounded square would have put it at
 /// roughly 1.9:1 contrast. Straight onto the white page it reads at about 11:1
 /// and matches the launcher icon exactly.
+///
+/// Nothing is written under it: the lettering is part of the artwork, so the
+/// old "Highlanders" / "Coffee & Tea" text pair was saying the same thing twice,
+/// in two different typefaces, at two different sizes.
 class _Brandmark extends StatelessWidget {
   const _Brandmark();
 
+  /// Rendered width. Height follows from [BwBrand.aspect], so 180 is140.5 tall.
+  ///
+  /// Up from 79.4, which held the mark at the same 62px the old black tile
+  /// occupied and read as a small icon rather than a header. 180 keeps it clear
+  /// of the form on a 360dp screen: the mark is 66% of the gutter-to-gutter
+  /// width, leaving the wordmark legible at arm's length over a counter.
+  static const double width = 180;
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        // Width is derived to hold the mark at the same 62px height the old
-        // black tile occupied (62 * 610/476 = 79.4). Growing the header pushed the
-        // sign-up row out of the ListView's lazily-built viewport at 360dp,
-        // which silently dropped it from the layout test.
-        const BwBrandmark(width: 79.4),
-        const SizedBox(height: BwSpacing.lg),
-        const Text(
-          'Highlanders',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.6,
-            color: BwColors.text,
-          ),
-        ),
-        const Text(
-          'Coffee & Tea',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 2.4,
-            color: BwColors.textMuted,
-          ),
-        ),
-      ],
-    );
+    // Center, not stretch: the parent Column stretches its children to full
+    // width, and an Image with a fixed width would otherwise sit left-aligned.
+    return const Center(child: BwBrandmark(width: width));
   }
 }
 
