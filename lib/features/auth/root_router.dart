@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../state/admin_provider.dart';
 import '../../state/session_provider.dart';
 import '../admin/admin_dashboard_screen.dart';
 import '../shell/app_shell.dart';
@@ -45,6 +46,17 @@ class _RootRouterState extends State<RootRouter> {
 
     _syncNavAfterAuthChange('${session.user.uid}:${session.user.role.name}');
 
-    return session.isAdmin ? const AdminDashboardScreen() : const AppShell();
+    if (session.isAdmin) {
+      // Bind here, not in the provider's constructor. The order list and staff
+      // roster are admin-only in the rules, so subscribing while signed out or as
+      // a customer would produce a PERMISSION_DENIED the operator cannot act on.
+      // Binding on the admin route means the read only happens where it is legal.
+      //
+      // Idempotent, so a rebuild is free.
+      context.read<AdminProvider>().bind();
+      return const AdminDashboardScreen();
+    }
+
+    return const AppShell();
   }
 }

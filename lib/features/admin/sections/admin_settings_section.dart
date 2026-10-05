@@ -7,6 +7,8 @@ import '../../../core/theme/bw_metrics.dart';
 import '../../../core/widgets/bw_badge.dart';
 import '../../../core/widgets/bw_button.dart';
 import '../../../core/widgets/bw_card.dart';
+import '../../../data/firestore/firestore_errors.dart';
+import '../../../data/models/settings.dart';
 import '../../../state/admin_provider.dart';
 import '../../../state/catalog_provider.dart';
 import '../../../state/session_provider.dart';
@@ -25,6 +27,51 @@ class AdminSettingsSection extends StatefulWidget {
 }
 
 class _AdminSettingsSectionState extends State<AdminSettingsSection> {
+  /// True while a seed write is in flight. The button is disabled rather than
+  /// hidden so its position does not shift the Sign out button below it.
+  bool _seeding = false;
+
+  /// Writes the sample data, then reports the outcome in a dialog.
+  ///
+  /// The dialog is not decoration. Seeding can legitimately refuse (orders
+  /// already exist), and a refusal the operator cannot see reads as a button that
+  /// does nothing.
+  Future<void> _seed() async {
+    setState(() => _seeding = true);
+
+    final WriteFailure? failure =
+        await context.read<AdminProvider>().seedFromMock();
+
+    if (!mounted) return;
+    setState(() => _seeding = false);
+
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: BwColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BwRadius.card)),
+        title: Text(
+          failure == null ? 'Sample data written' : 'Seed skipped',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: BwColors.text),
+        ),
+        content: Text(
+          failure == null
+              ? 'The sample menu, categories, promos and staff roster are now in Firestore. '
+                  'Open the collections in the console and replace the contents with the '
+                  "café's real menu."
+              : failure.message,
+          style: const TextStyle(fontSize: 14, height: 1.45, color: BwColors.textMuted),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close', style: TextStyle(color: BwColors.text)),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// [StoreSettings] is immutable, so an edit is expressed as a transform of
   /// the current value rather than a mutation. The old `copyWith` call was also
   /// redundant — `copyWith` already omits null fields, so passing every field
@@ -207,6 +254,56 @@ class _AdminSettingsSectionState extends State<AdminSettingsSection> {
                   variant: BwBadgeVariant.outline,
                   dense: true,
                 ),
+              ],
+            ),
+          ),
+        ),
+
+        const AdminSectionHeader(title: 'Data'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: BwSpacing.gutter),
+          child: BwCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Icon(
+                      admin.isLive ? Icons.cloud_done_outlined : Icons.cloud_off_outlined,
+                      size: 16,
+                      color: BwColors.textMuted,
+                    ),
+                    const SizedBox(width: BwSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        admin.isLive
+                            ? (admin.hasLoaded ? 'Reading from Firestore' : 'Connecting…')
+                            : 'Sample data — nothing is saved',
+                        style: const TextStyle(fontSize: 13, color: BwColors.textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BwSpacing.md),
+                Text(
+                  admin.isLive
+                      ? 'Menu, orders, staff and settings are read from Firestore and every '
+                          'edit is written back. Seeding writes the sample menu and staff '
+                          'roster once; it refuses if any order already exists.'
+                      : 'No Firebase configuration, so the panel is showing sample data. '
+                          'Edits work for this session and are gone when the app closes.',
+                  style: const TextStyle(fontSize: 12, height: 1.45, color: BwColors.textMuted),
+                ),
+                if (admin.isLive) ...<Widget>[
+                  const SizedBox(height: BwSpacing.md),
+                  BwButton(
+                    label: 'Seed sample data',
+                    icon: Icons.download_outlined,
+                    variant: BwButtonVariant.outlined,
+                    height: 46,
+                    onPressed: _seeding ? null : _seed,
+                  ),
+                ],
               ],
             ),
           ),

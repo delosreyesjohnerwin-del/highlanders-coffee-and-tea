@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme/bw_theme.dart';
+import 'data/firestore/repository_factory.dart';
+import 'data/firestore/shop_repository.dart';
 import 'features/auth/root_router.dart';
 import 'features/shell/app_shell.dart';
 import 'services/auth_service.dart';
@@ -22,7 +24,12 @@ import 'state/session_provider.dart';
 ///
 /// They differ only in `home`; every provider below is identical, so a test that
 /// mounts one screen still exercises the same state layer production uses.
-class HighlandersApp extends StatelessWidget {
+///
+/// Stateful rather than stateless for one reason: the [ShopRepository] must
+/// exist exactly once for the lifetime of the graph. Held in the `State`, a
+/// rebuild reuses it instead of opening a second set of Firestore listeners and
+/// orphaning the first.
+class HighlandersApp extends StatefulWidget {
   const HighlandersApp({super.key, this.home, this.authService, this.roleResolver});
 
   /// Starts at the login screen and routes by role. Used in production.
@@ -39,19 +46,37 @@ class HighlandersApp extends StatelessWidget {
   final RoleResolver? roleResolver;
 
   @override
+  State<HighlandersApp> createState() => _HighlandersAppState();
+}
+
+class _HighlandersAppState extends State<HighlandersApp> {
+  late final ShopRepository _repository = createShopRepository();
+
+  @override
   Widget build(BuildContext context) {
+    final ShopRepository repository = _repository;
+
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider<CatalogProvider>(create: (_) => CatalogProvider()),
+        ChangeNotifierProvider<CatalogProvider>(
+          create: (_) => CatalogProvider(repository: repository)..bind(),
+        ),
         ChangeNotifierProvider<SessionProvider>(
           create: (_) => SessionProvider(
-            authService: authService,
-            roleResolver: roleResolver,
+            authService: widget.authService,
+            roleResolver: widget.roleResolver,
+            repository: repository,
           ),
         ),
         // The shop-wide view: every order, all stock, all staff. Separate from
         // the session because it describes the café, not one customer.
-        ChangeNotifierProvider<AdminProvider>(create: (_) => AdminProvider()),
+        //
+        // Not bound at construction. It binds when the session resolves to an
+        // admin — see RootRouter — because a customer reading the order list is
+        // denied by the rules and the resulting error would look like a fault.
+        ChangeNotifierProvider<AdminProvider>(
+          create: (_) => AdminProvider(repository: repository),
+        ),
         // The cart needs the catalog to resolve names, prices and the fee
         // schedule, and the session for saved addresses.
         //
@@ -70,7 +95,7 @@ class HighlandersApp extends StatelessWidget {
         title: 'Highlanders Coffee & Tea',
         debugShowCheckedModeBanner: false,
         theme: BwTheme.build(),
-        home: home ?? const AppShell(),
+        home: widget.home ?? const AppShell(),
       ),
     );
   }

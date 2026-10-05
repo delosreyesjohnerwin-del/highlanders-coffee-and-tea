@@ -128,9 +128,24 @@ class Order {
     this.driverPhone,
     this.paymentRef,
     this.promoCode,
+    this.customerUid = '',
   });
 
   final String id;
+
+  /// Auth uid of the customer who placed this.
+  ///
+  /// This is not decoration: the Firestore rules key every order read on it
+  /// (`resource.data.customerUid == request.auth.uid`), and `create` requires it
+  /// to equal the caller's uid. Without it on the model there would be nowhere
+  /// to keep the value an order was stored under, and the admin panel could not
+  /// hand an order back to the customer who owns it.
+  ///
+  /// Empty means "not attributed" and such an order cannot be written — see
+  /// `FirestoreOrderRepository.saveOrder`, which refuses rather than letting the
+  /// server reject it.
+  final String customerUid;
+
   final List<OrderLine> lines;
   final OrderStatus status;
   final Fulfillment fulfillment;

@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../data/firestore/firestore_errors.dart';
+import '../data/firestore/shop_repository.dart';
 import '../data/mock/mock_data.dart';
 import '../data/models/order.dart';
 import '../services/auth_service.dart';
@@ -17,18 +21,32 @@ enum AuthStatus { signedOut, signedIn, busy }
 /// Auth itself is delegated to an [AuthService] so the mock and Firebase
 /// backends are interchangeable.
 class SessionProvider extends ChangeNotifier {
-  SessionProvider({AuthService? authService, RoleResolver? roleResolver}) {
+  SessionProvider({
+    AuthService? authService,
+    RoleResolver? roleResolver,
+    ShopRepository? repository,
+  }) {
     // Resolved in the body rather than the initializer list: role resolution
     // depends on which backend was chosen, which is not known until the auth
     // service exists.
     _auth = authService ?? AuthServiceFactory.create();
     _roles = roleResolver ?? AuthServiceFactory.roleResolverFor(_auth);
+    _repository = repository;
 
     _loadAccount(UserRole.customer);
   }
 
   late final AuthService _auth;
   late final RoleResolver _roles;
+
+  /// Null when the app has no backend. Every method that touches it must handle
+  /// null rather than assume a repository exists — the memory-backed providers
+  /// are the ones that carry the seed data in that case.
+  ShopRepository? _repository;
+
+  StreamSubscription<List<Order>>? _ordersSub;
+  StreamSubscription<List<SavedAddress>>? _addressesSub;
+  WriteFailure? _failure;
 
   AuthStatus _status = AuthStatus.signedOut;
   bool _rememberMe = false;
@@ -53,6 +71,23 @@ class SessionProvider extends ChangeNotifier {
   /// Which backend is live — surfaced in Settings for debugging.
   AuthService get authService => _auth;
   RoleResolver get roleResolver => _roles;
+
+  /// True when orders and addresses are actually being read from a backend.
+  bool get isLive => _repository?.isLive ?? false;
+
+  /// Most recent failed write, and clears it.
+  WriteFailure? consumeFailure() {
+    final WriteFailure? failure = _failure;
+    _failure = null;
+    return failure;
+  }
+
+  void _recordFailure(WriteFailure? failure) {
+    if (failure == null) return;
+    _failure = failure;
+    logWriteFailure(failure);
+    notifyListeners();
+  }
 
   bool get isAdmin => isSignedIn && _user.role == UserRole.admin;
 
@@ -80,17 +115,36 @@ class SessionProvider extends ChangeNotifier {
   void addAddress(SavedAddress address) {
     _addresses = <SavedAddress>[..._addresses, address];
     notifyListeners();
+
+    final ShopRepository? repo = _repository;
+    if (repo == null) return;
+    unawaited(
+      repo.saveAddress(_user.uid, address).then(_recordFailure),
+    );
   }
 
   void removeAddress(String id) {
     _addresses = _addresses.where((SavedAddress a) => a.id != id).toList(growable: false);
     notifyListeners();
+
+    final ShopRepository? repo = _repository;
+    if (repo == null) return;
+    unawaited(repo.deleteAddress(_user.uid, id).then(_recordFailure));
   }
 
   /// Appends a freshly placed order to the top of the history.
+  ///
+  /// Writes through when a backend exists. The local append happens first and is
+  /// not rolled back on failure — the customer has paid, and telling them their
+  /// order vanished because the phone lost signal would be worse than showing a
+  /// retryable warning. The failure is recorded for the UI to surface.
   void placeOrder(Order order) {
     _orders = <Order>[order, ..._orders];
     notifyListeners();
+
+    final ShopRepository? repo = _repository;
+    if (repo == null) return;
+    unawaited(repo.createOrder(order).then(_recordFailure));
   }
 
   void updateOrderStatus(String orderId, OrderStatus status) {
@@ -98,6 +152,7 @@ class SessionProvider extends ChangeNotifier {
         .map((Order o) => o.id == orderId
             ? Order(
                 id: o.id,
+                customerUid: o.customerUid,
                 lines: o.lines,
                 status: status,
                 fulfillment: o.fulfillment,
@@ -160,6 +215,12 @@ class SessionProvider extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    // Drop the live subscriptions *before* the auth token goes, so no read
+    // arrives afterwards under an identity that no longer matches the query it
+    // was issued with.
+    _cancelOrders();
+    _cancelAddresses();
+
     await _auth.signOut();
     // Reset to the seeded customer account. Screens can still be rendered in
     // isolation (tests do exactly that) without becoming a special case.
@@ -198,11 +259,74 @@ class SessionProvider extends ChangeNotifier {
     await _roles.ensureUserDoc(identity, role);
 
     _loadAccount(role, identity: identity);
+    _bindLiveData();
     _status = AuthStatus.signedIn;
     _lastError = null;
     notifyListeners();
     return true;
   }
+
+  /// Subscribes to the signed-in customer's own orders and addresses.
+  ///
+  /// Both queries filter on the uid, and both have to: the `orders.list` rule is
+  /// evaluated per document the query would return, so an unfiltered query is
+  /// refused outright with PERMISSION_DENIED rather than silently returning
+  /// nothing. The comment in `firestore.rules` says the same thing from the other
+  /// side.
+  ///
+  /// A real identity gets *empty* lists first, not the seeded ones — the seed
+  /// belongs to a demo account that does not exist in Firestore, and showing a
+  /// new customer someone else's order history would be a privacy bug that reads
+  /// as a feature.
+  void _bindLiveData() {
+    final ShopRepository? repo = _repository;
+    if (repo == null || !repo.isLive) return;
+    if (_user.uid == _seedUid) return;
+
+    _cancelOrders();
+    _cancelAddresses();
+
+    _ordersSub = repo.watchOrdersFor(_user.uid).listen(
+      (List<Order> orders) {
+        _orders = orders;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        _recordFailure(describeFailure('watch your orders', error));
+      },
+    );
+
+    _addressesSub = repo.watchAddresses(_user.uid).listen(
+      (List<SavedAddress> addresses) {
+        _addresses = addresses;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        _recordFailure(describeFailure('watch your addresses', error));
+      },
+    );
+  }
+
+  void _cancelOrders() {
+    unawaited(_ordersSub?.cancel());
+    _ordersSub = null;
+  }
+
+  void _cancelAddresses() {
+    unawaited(_addressesSub?.cancel());
+    _addressesSub = null;
+  }
+
+  @override
+  void dispose() {
+    _cancelOrders();
+    _cancelAddresses();
+    super.dispose();
+  }
+
+  /// The seeded accounts' uid. Orders and addresses are never fetched for it:
+  /// [MockData] already holds them, and there is no such document in Firestore.
+  static const String _seedUid = 'u-marco';
 
   /// Swaps in the seeded account for [role], or builds one from a real identity.
   void _loadAccount(UserRole role, {AuthIdentity? identity}) {

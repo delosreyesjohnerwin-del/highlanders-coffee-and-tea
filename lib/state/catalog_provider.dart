@@ -1,25 +1,103 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../data/firestore/firestore_errors.dart';
+import '../data/firestore/memory_shop_repository.dart';
+import '../data/firestore/shop_repository.dart';
 import '../data/mock/mock_data.dart';
 import '../data/models/coverage.dart';
 import '../data/models/menu.dart';
 
 /// Menu, categories, promos and café trading status.
 ///
-/// Backed by [MockData] until Firebase is wired up. Every value the admin
-/// panel edits will eventually flow through here.
+/// Seeded from [MockData] so the app is usable with no backend, then replaced by
+/// whatever a [ShopRepository] returns as soon as one is bound. Both happen: the
+/// seed is the first paint, the repository is the truth a moment later. That
+/// avoids an empty shop on a cold start, at the cost of a brief window where the
+/// menu is the mock one — the tradeoff is deliberate, because "no items" reads as
+/// "we are closed" and "closed" loses a sale.
 class CatalogProvider extends ChangeNotifier {
-  CatalogProvider();
+  CatalogProvider({ShopRepository? repository})
+      : _repository = repository ?? MemoryShopRepository() {
+    _categories = List<MenuCategory>.from(MockData.categories);
+    _items = List<MenuItem>.from(MockData.menu);
+    _promos = List<Promo>.from(MockData.promos);
+  }
 
-  List<MenuCategory> _categories = List<MenuCategory>.from(MockData.categories);
-  List<MenuItem> _items = List<MenuItem>.from(MockData.menu);
-  final List<Promo> _promos = List<Promo>.from(MockData.promos);
+  final ShopRepository _repository;
+  StreamSubscription<CatalogSnapshot>? _subscription;
+  bool _bound = false;
+
+  List<MenuCategory> _categories = <MenuCategory>[];
+  List<MenuItem> _items = <MenuItem>[];
+  List<Promo> _promos = <Promo>[];
 
   String _searchQuery = '';
   String _selectedCategoryId = 'all';
   bool _isOpen = true;
 
   DeliveryPricing _pricing = const DeliveryPricing(freeOver: 500);
+
+  /// Most recent failed write, for the UI to surface. Cleared by
+  /// [consumeFailure].
+  WriteFailure? _failure;
+
+  /// True once a live backend has answered. False means the menu on screen is
+  /// the seed and any edit is memory-only.
+  bool get isLive => _repository.isLive;
+
+  bool _loaded = false;
+  bool get hasLoaded => _loaded;
+
+  /// Subscribes to the repository. Idempotent, so a rebuild can call it freely.
+  void bind() {
+    if (_bound) return;
+    _bound = true;
+
+    _subscription = _repository.watchCatalog().listen(
+      (CatalogSnapshot snapshot) {
+        // The menu lists are only replaced when the snapshot actually has
+        // content. A brand-new project returns three empty collections, and
+        // blowing away the seed on that first emission would show a café with no
+        // menu — which reads as "we are closed", not "not configured yet".
+        //
+        // Settings are applied unconditionally, including on an empty snapshot.
+        // The admin closing the shop has to reach the customer app even in the
+        // window before the menu has loaded, and that is the one case where
+        // applying from an empty snapshot matters.
+        if (!snapshot.isEmpty) {
+          _categories = snapshot.categories;
+          _items = snapshot.items;
+          _promos = snapshot.promos;
+        }
+
+        _isOpen = snapshot.isOpen;
+        _pricing = snapshot.pricing;
+        _loaded = true;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        _failure = describeFailure('watch the menu', error);
+        logWriteFailure(_failure!);
+        notifyListeners();
+      },
+    );
+  }
+
+  /// The failure to show, and clears it. One-shot so a toast does not reappear
+  /// on the next rebuild.
+  WriteFailure? consumeFailure() {
+    final WriteFailure? failure = _failure;
+    _failure = null;
+    return failure;
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
 
   List<MenuCategory> get categories => _categories;
   List<Promo> get promos => _promos;
@@ -39,7 +117,7 @@ class CatalogProvider extends ChangeNotifier {
     return _promos.isEmpty ? null : _promos.first;
   }
 
-  List<Promo> get offerTiles => _promos.where((Promo p) => p.code != 'DAMPOTIST').toList(growable: false);
+  
 
   MenuItem? itemById(String id) {
     for (final MenuItem i in _items) {
@@ -89,9 +167,19 @@ class CatalogProvider extends ChangeNotifier {
 
   void clearSearch() => setSearch('');
 
-  void toggleOpen() {
+  /// Flips trading state.
+  ///
+  /// Not a local-only toggle: the open flag lives in the shop settings document
+  /// because the customer app reads it too. Kept here as the customer-facing
+  /// entry point, delegating the write.
+  Future<void> toggleOpen() async {
     _isOpen = !_isOpen;
     notifyListeners();
+
+    final WriteFailure? failure = await _repository.saveSettings(
+      (await _repository.loadSettings()).copyWith(isOpen: _isOpen),
+    );
+    _recordFailure(failure);
   }
 
   void setPricing(DeliveryPricing pricing) {
@@ -99,7 +187,20 @@ class CatalogProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _recordFailure(WriteFailure? failure) {
+    if (failure == null) return;
+    _failure = failure;
+    logWriteFailure(failure);
+    notifyListeners();
+  }
+
   // --- admin actions -----------------------------------------------------
+  //
+  // Every one of these is optimistic: local state changes and the UI repaints
+  // immediately, then the write goes out. An admin tapping a toggle in a
+  // basement with no signal must see the toggle move. The cost is that a failed
+  // write leaves the UI briefly lying, which is why each failure is recorded
+  // rather than dropped and the caller can surface it.
 
   void upsertItem(MenuItem item) {
     final int i = _items.indexWhere((MenuItem e) => e.id == item.id);
@@ -109,6 +210,7 @@ class CatalogProvider extends ChangeNotifier {
       _items = <MenuItem>[..._items]..[i] = item;
     }
     notifyListeners();
+    unawaited(_repository.saveMenuItem(item).then(_recordFailure));
   }
 
   void setItemAvailability(String id, bool available) {
@@ -130,6 +232,7 @@ class CatalogProvider extends ChangeNotifier {
     _items = _items.where((MenuItem e) => e.id != id).toList(growable: false);
     if (_items.length == before) return;
     notifyListeners();
+    unawaited(_repository.deleteMenuItem(id).then(_recordFailure));
   }
 
   void updatePrice(String id, num price) {
@@ -146,5 +249,16 @@ class CatalogProvider extends ChangeNotifier {
       _categories = <MenuCategory>[..._categories]..[i] = category;
     }
     notifyListeners();
+    unawaited(_repository.saveCategory(category).then(_recordFailure));
+  }
+
+  void upsertPromo(Promo promo) {
+    _promos = <Promo>[
+      for (final Promo p in _promos)
+        if (p.code == promo.code) promo else p,
+      if (!_promos.any((Promo p) => p.code == promo.code)) promo,
+    ];
+    notifyListeners();
+    unawaited(_repository.savePromo(promo).then(_recordFailure));
   }
 }

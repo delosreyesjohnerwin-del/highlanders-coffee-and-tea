@@ -224,7 +224,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final String pickupCode = (1000 + DateTime.now().millisecondsSinceEpoch % 9000).toString();
     final int eta = cart.etaMinutes;
 
+    // `customerUid` is stamped here rather than inferred by the repository,
+    // because the repository has no way to know who is signed in — and the rules
+    // require the field to equal the caller's uid. Setting it from the session
+    // keeps the two in step by construction.
     final Order order = Order(
+      customerUid: context.read<SessionProvider>().user.uid,
       id: Fmt.orderId(pickupCode),
       lines: cart.lines,
       status: cart.paymentMethod.isPrepaid ? OrderStatus.confirmed : OrderStatus.pending,

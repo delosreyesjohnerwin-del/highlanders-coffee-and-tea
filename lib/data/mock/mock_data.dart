@@ -308,6 +308,7 @@ class MockData {
 
     return <Order>[
       Order(
+        customerUid: userId,
         id: 'HL-2601-4820',
         lines: const <OrderLine>[
           OrderLine(itemId: 'm-icedlatte', name: 'Iced Latte', price: 125, quantity: 2),
@@ -332,6 +333,7 @@ class MockData {
         paymentRef: 'PAY-9F2A41',
       ),
       Order(
+        customerUid: userId,
         id: 'HL-2601-5155',
         lines: const <OrderLine>[
           OrderLine(itemId: 'm-pasta', name: 'Creamy Carbonara', price: 195, quantity: 1),
@@ -355,6 +357,7 @@ class MockData {
         driverName: 'Rodel',
       ),
       Order(
+        customerUid: userId,
         id: 'HL-2601-6372',
         lines: const <OrderLine>[
           OrderLine(itemId: 'm-tray', name: 'Highlanders Breakfast Tray', price: 245, quantity: 1),
@@ -385,6 +388,7 @@ class MockData {
   static final List<Order> adminQueue = <Order>[
     Order(
       id: 'HL-2601-6372',
+      customerUid: 'seed-u-marco',
       lines: <OrderLine>[
         OrderLine(itemId: 'm-tray', name: 'Highlanders Breakfast Tray', price: 245, quantity: 1),
       ],
@@ -402,6 +406,7 @@ class MockData {
     ),
     Order(
       id: 'HL-2601-6390',
+      customerUid: 'seed-u-ana',
       lines: <OrderLine>[
         OrderLine(itemId: 'm-latte', name: 'Caffè Latte', price: 120, quantity: 2),
         OrderLine(itemId: 'm-ensaymada', name: 'Ensaymada', price: 75, quantity: 1),
@@ -417,6 +422,7 @@ class MockData {
     ),
     Order(
       id: 'HL-2601-6404',
+      customerUid: 'seed-u-jomar',
       lines: <OrderLine>[
         OrderLine(itemId: 'm-mochafrappe', name: 'Mocha Frappe', price: 150, quantity: 2),
       ],
@@ -497,15 +503,20 @@ class MockData {
     final DateTime today = DateTime.now();
     final DateTime midnight = DateTime(today.year, today.month, today.day);
 
-    const List<String> customers = <String>[
-      'Ana Villanueva',
-      'Jomar Bautista',
-      'Kyla Ramos',
-      'Marco Reyes',
-      'Nina Toledo',
-      'Paolo Aquino',
-      'Rina Santiago',
-      'Tito Buenaventura',
+    // (display name, uid) pairs. The uid is required — the security rules key
+    // every order read on `customerUid`, and `seed` skips an order without one.
+    // These are synthetic, matching no real account; the seeded history exists
+    // to give the charts something to draw, and it is replaced before the café
+    // takes real orders.
+    const List<(String, String)> customers = <(String, String)>[
+      ('Ana Villanueva', 'seed-u-ana'),
+      ('Jomar Bautista', 'seed-u-jomar'),
+      ('Kyla Ramos', 'seed-u-kyla'),
+      ('Marco Reyes', 'seed-u-marco'),
+      ('Nina Toledo', 'seed-u-nina'),
+      ('Paolo Aquino', 'seed-u-paolo'),
+      ('Rina Santiago', 'seed-u-rina'),
+      ('Tito Buenaventura', 'seed-u-tito'),
     ];
 
     const List<(String, String, num)> basket = <(String, String, num)>[
@@ -563,9 +574,12 @@ class MockData {
         final bool isDelivery = rng.nextBool();
         final num fee = isDelivery ? (rng.nextBool() ? 25 : 35) : 0;
 
+        final (String, String) customer = customers[rng.nextInt(customers.length)];
+
         orders.add(
           Order(
             id: 'HL-2609-${(dayOffset * 100 + i).toString().padLeft(4, '0')}',
+            customerUid: customer.$2,
             lines: lines,
             status: OrderStatus.delivered,
             fulfillment: isDelivery ? Fulfillment.delivery : Fulfillment.pickup,
@@ -576,7 +590,7 @@ class MockData {
             subtotal: subtotal,
             deliveryFee: fee,
             distanceKm: isDelivery ? 0.8 + rng.nextDouble() * 3 : null,
-            customerName: customers[rng.nextInt(customers.length)],
+            customerName: customer.$1,
           ),
         );
       }
