@@ -1,0 +1,133 @@
+rules_version = '2';
+
+// Highlanders Coffee & Tea — Firestore rules
+//
+// Deploy by hand (Rules editor in the Firebase console); there is no CLI in
+// this project's toolchain yet.
+//
+// The one thing worth reading closely: the `users` rules. Role is the entire
+// authorisation model for the admin panel, so it is the one place where a
+// mistake would hand the shop over to the first person who signs up.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- helpers ---------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Reads the caller's role from their own user document. `exists` is checked
+    // first because `get()` on a missing document throws rather than returning
+    // an empty snapshot.
+    function myRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? myDoc().data.role
+        : null;
+    }
+
+    function isAdmin() {
+      return myRole() == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // A field may only be written when its value is unchanged, or when the
+    // writer is allowed to change it. This is what makes role promotion safe
+    // without a Cloud Function.
+    function roleUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+    }
+
+    // --- users -----------------------------------------------------------
+    //
+    // Bootstrap: a brand-new account may create its own document, but only with
+    // role 'customer'. This is the whole self-promotion defence — an admin is
+    // promoted by editing the field in the console, not from the app.
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if isOwner(userId)
+                    && request.resource.data.role == 'customer'
+                    && request.resource.data.uid == request.auth.uid;
+
+      allow update: if isAdmin()
+                    || (isOwner(userId) && roleUnchanged());
+
+      // Deletion is admin-only: a user must not be able to erase the evidence
+      // that an account ever existed.
+      allow delete: if isAdmin();
+    }
+
+    // --- public reference data -------------------------------------------
+    //
+    // The menu is readable by anyone, including signed-out visitors, because the
+    // login screen is the only thing they can see and it may want to show what
+    // is on sale. Writes are admin-only.
+    match /menuCategories/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /menuItems/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /promos/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- orders ----------------------------------------------------------
+    //
+    // A customer may create their own order and read it; the admin panel reads
+    // and writes all of them. The `customerUid` equality check is what stops a
+    // customer reading somebody else's order history, and the field is required
+    // so it cannot be omitted.
+    match /orders/{orderId} {
+      allow get: if isAdmin() || (isSignedIn() && resource.data.customerUid == request.auth.uid);
+      allow list: if isAdmin()
+                  || (isSignedIn() && request.query.limit(1).where('customerUid').isEqualTo(request.auth.uid));
+
+      allow create: if isSignedIn()
+                    && request.resource.data.customerUid == request.auth.uid;
+
+      // Customers do not update orders: the status field belongs to the shop, and
+      // letting a client set it would let them mark their own order delivered.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --- drivers ---------------------------------------------------------
+    match /drivers/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- addresses -------------------------------------------------------
+    match /addresses/{addressId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Anything not named above is closed. New collections deny by default until
+    // someone thinks about who should reach them.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

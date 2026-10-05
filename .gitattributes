@@ -1,0 +1,23 @@
+# Normalise text files to LF in the repository and in the working tree.
+#
+# Without this, Git for Windows checks text files out as CRLF, so a file edited
+# by an LF-only tool appears as entirely rewritten — whole-file diffs that hide
+# the real change. Dart tooling and Gradle are both happy with LF.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending translated.
+*.apk binary
+*.aar binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.ttf binary
+*.otf binary
+
+# The Gradle wrapper jar is a binary; the shell scripts are LF-only by
+# convention so they stay executable after a Windows checkout.
+gradlew text eol=lf
+*.sh text eol=lf
