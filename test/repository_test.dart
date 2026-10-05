@@ -412,6 +412,75 @@ void main() {
       expect(latte.status, StockStatus.lowStock);
     });
 
+    test('a promo edit reaches the repository', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
+
+      catalog.upsertPromo(
+        const Promo(
+          code: 'SUMMER25',
+          title: 'Summer 25%',
+          subtitle: 'Ice drinks, all month.',
+          discountPercent: 25,
+        ),
+      );
+
+      await settle();
+      final CatalogSnapshot snapshot = await repo.loadCatalog();
+      final Promo saved = snapshot.promos.firstWhere((Promo p) => p.code == 'SUMMER25');
+      expect(saved.title, 'Summer 25%');
+      expect(saved.discountPercent, 25);
+    });
+
+    test('a promo delete reaches the repository, not just local state', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
+      expect(catalog.allPromos, isNotEmpty);
+
+      catalog.removePromo('DAMPOTIST');
+
+      // Optimistic, same as every other admin action.
+      expect(catalog.allPromos.any((Promo p) => p.code == 'DAMPOTIST'), isFalse);
+
+      await settle();
+      // The point: gone from the backend too, so it does not come back on the
+      // next catalog read. A delete that only touched local state would reappear
+      // the moment the Firestore listener fired.
+      final CatalogSnapshot snapshot = await repo.loadCatalog();
+      expect(snapshot.promos.any((Promo p) => p.code == 'DAMPOTIST'), isFalse);
+    });
+
+    test('a paused promo is hidden from customers but still listed for admin', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
+      final Promo original = catalog.allPromos.first;
+
+      catalog.upsertPromo(
+        Promo(
+          code: original.code,
+          title: original.title,
+          subtitle: original.subtitle,
+          badge: original.badge,
+          ctaLabel: original.ctaLabel,
+          discountPercent: original.discountPercent,
+          buyXGetY: original.buyXGetY,
+          active: false,
+        ),
+      );
+
+      // Still in the document — pausing is not deleting, so the owner can bring
+      // it back. Filtered on read, so an already-open customer app drops it
+      // immediately rather than at the next restart.
+      expect(catalog.allPromos.any((Promo p) => p.code == original.code), isTrue);
+      expect(catalog.promos.any((Promo p) => p.code == original.code), isFalse);
+    });
+
     test('a failed write is recorded, not swallowed', () async {
       final MemoryShopRepository repo = MemoryShopRepository()..failWrites = true;
       addTearDown(repo.dispose);
@@ -428,6 +497,23 @@ void main() {
 
       // One-shot, so a toast does not reappear on the next rebuild.
       expect(catalog.consumeFailure(), isNull);
+    });
+
+    test('a failed promo delete is recorded too', () async {
+      final MemoryShopRepository repo = MemoryShopRepository()..failWrites = true;
+      addTearDown(repo.dispose);
+
+      final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
+
+      catalog.removePromo('DAMPOTIST');
+      await settle();
+
+      // Deleting an offer is the action most likely to fail on a café's flaky
+      // connection, and the one where a silent failure is most costly: the owner
+      // believes the promo is gone and a customer is still seeing it.
+      final WriteFailure? failure = catalog.consumeFailure();
+      expect(failure, isNotNull);
+      expect(failure!.operation, contains('DAMPOTIST'));
     });
   });
 

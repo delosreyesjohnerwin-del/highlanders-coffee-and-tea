@@ -132,6 +132,26 @@ class MemoryShopRepository implements ShopRepository {
     return null;
   }
 
+  @override
+  Future<WriteFailure?> deletePromo(String code) async {
+    if (failWrites) return _maybeFail('delete promo $code');
+
+    final int before = _catalog.promos.length;
+    _catalog = CatalogSnapshot(
+      items: _catalog.items,
+      categories: _catalog.categories,
+      promos: _catalog.promos
+          .where((Promo p) => p.code != code)
+          .toList(growable: false),
+      isOpen: _catalog.isOpen,
+      pricing: _catalog.pricing,
+    );
+    if (_catalog.promos.length == before) return null;
+
+    _catalogController.add(_catalog);
+    return null;
+  }
+
   // --- admin --------------------------------------------------------------
 
   @override

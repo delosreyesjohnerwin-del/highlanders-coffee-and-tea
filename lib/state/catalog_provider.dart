@@ -100,7 +100,18 @@ class CatalogProvider extends ChangeNotifier {
   }
 
   List<MenuCategory> get categories => _categories;
-  List<Promo> get promos => _promos;
+
+  /// Every promo, live or paused. The admin panel's job is to show all of them so
+  /// a paused one can be brought back.
+  List<Promo> get allPromos => _promos;
+
+  /// Promos a customer should see, in carousel order.
+  ///
+  /// Filtered on read rather than on write so pausing a promo takes effect for an
+  /// already-open customer app immediately, via the same catalog listener that
+  /// carries the menu. Hiding it in the admin panel instead would leave the
+  /// customer's screen showing an offer the owner believes they have taken down.
+  List<Promo> get promos => _promos.where((Promo p) => p.active).toList(growable: false);
   bool get isOpen => _isOpen;
   String get searchQuery => _searchQuery;
   String get selectedCategoryId => _selectedCategoryId;
@@ -260,5 +271,22 @@ class CatalogProvider extends ChangeNotifier {
     ];
     notifyListeners();
     unawaited(_repository.savePromo(promo).then(_recordFailure));
+  }
+
+  /// Deletes a promo outright.
+  ///
+  /// Distinct from [upsertPromo] with `active: false`: an inactive promo stays in
+  /// Firestore and keeps coming back on every catalog read, so "turn it off"
+  /// survives a restart while "remove it" does not. Both exist because a café
+  /// ends a promotion and then wants it gone from the list rather than hidden.
+  ///
+  /// The promotion code doubles as the Firestore document id, so this deletes by
+  /// code rather than by a separate id field.
+  void removePromo(String code) {
+    final int before = _promos.length;
+    _promos = _promos.where((Promo p) => p.code != code).toList(growable: false);
+    if (_promos.length == before) return;
+    notifyListeners();
+    unawaited(_repository.deletePromo(code).then(_recordFailure));
   }
 }

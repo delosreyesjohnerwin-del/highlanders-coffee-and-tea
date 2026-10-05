@@ -12,14 +12,21 @@ import '../../state/session_provider.dart';
 import 'sections/admin_inventory_section.dart';
 import 'sections/admin_orders_section.dart';
 import 'sections/admin_overview_section.dart';
+import 'sections/admin_promos_section.dart';
 import 'sections/admin_sales_section.dart';
 import 'sections/admin_settings_section.dart';
 import 'sections/admin_staff_section.dart';
 
-/// The admin panel: six sections behind a rail, a drawer, or neither.
+/// The admin panel: seven sections behind a rail, a drawer, or neither.
+///
+/// Order matters. Merchandising sits together — Inventory then Promos — because
+/// both feed the customer-facing shop and an owner editing them is in the same
+/// head. Sales and Orders stay adjacent for the same reason, and Settings last
+/// because it is the one section an owner opens rarely.
 enum AdminSection {
   overview('Overview', Icons.insights_outlined),
   inventory('Inventory', Icons.inventory_2_outlined),
+  promos('Promos', Icons.local_offer_outlined),
   sales('Sales', Icons.receipt_long_outlined),
   orders('Orders', Icons.local_shipping_outlined),
   staff('Staff', Icons.badge_outlined),
@@ -108,6 +115,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                           children: const <Widget>[
                             AdminOverviewSection(),
                             AdminInventorySection(),
+                            AdminPromosSection(),
                             AdminSalesSection(),
                             AdminOrdersSection(),
                             AdminStaffSection(),

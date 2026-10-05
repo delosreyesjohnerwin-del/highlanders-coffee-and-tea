@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlanders_coffee/app.dart';
 import 'package:highlanders_coffee/core/firebase/firebase_bootstrap.dart';
+import 'package:highlanders_coffee/data/mock/mock_data.dart';
+import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/features/admin/admin_dashboard_screen.dart';
 import 'package:highlanders_coffee/features/admin/sections/admin_overview_section.dart';
 import 'package:highlanders_coffee/features/checkout/checkout_screen.dart';
@@ -331,7 +333,7 @@ void main() {
 
   group('admin panel', () {
 
-    testWidgets('renders six sections behind a drawer on a phone',
+    testWidgets('renders every section behind a drawer on a phone',
         (WidgetTester tester) async {
       await usePhone(tester);
       await pumpApp(tester, home: const AdminDashboardScreen());
@@ -344,8 +346,10 @@ void main() {
       expect(find.byType(Drawer), findsNothing);
       expect(find.byIcon(Icons.menu_rounded), findsOneWidget);
 
-      // All six are declared, and all six are reachable.
-      expect(AdminSection.values, hasLength(6));
+      // Asserted against AdminSection.values rather than a fixed count so adding
+      // a section cannot silently leave it out of the drawer: the loop below is
+      // what would fail. A hard-coded 6 only proves the enum did not change.
+      expect(AdminSection.values, isNotEmpty);
 
       await tester.tap(find.byIcon(Icons.menu_rounded));
       await tester.pumpAndSettle();
@@ -526,6 +530,105 @@ void main() {
       // That button became "End shift": every member now works.
       expect(find.text('Start shift'), findsNothing);
       expect(find.text('End shift'), findsWidgets);
+    });
+
+    testWidgets('promos section lists promotions and pauses one',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.promos,
+      ));
+
+      expect(find.text('In the carousel'), findsOneWidget);
+      expect(find.text('Not running'), findsOneWidget);
+
+      // Every seeded promo is live, so the paused count is zero and no card
+      // carries the Paused badge yet.
+      expect(find.text('Paused (0)'), findsOneWidget);
+      expect(find.text('Paused'), findsNothing);
+
+      final Finder pause = find.byTooltip('Pause ${MockData.promos.first.title}').first;
+      await revealByDragging(tester, pause, find.byType(ListView).last);
+      await tester.tap(pause);
+      await tester.pumpAndSettle();
+
+      // The card is still listed — pausing is not deleting — but it is now
+      // counted as paused and badged accordingly.
+      expect(find.text('Paused (1)'), findsOneWidget);
+      expect(
+        find.text(MockData.promos.first.title),
+        findsOneWidget,
+        reason: 'a paused promo must stay listed so it can be brought back',
+      );
+    });
+
+    testWidgets('promo edit sheet is pre-filled and saves',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.promos,
+      ));
+
+      final Promo original = MockData.promos.first;
+      final Finder edit = find.byTooltip('Edit ${original.title}').first;
+      await revealByDragging(tester, edit, find.byType(ListView).last);
+      await tester.tap(edit);
+      await tester.pumpAndSettle();
+
+      // Every field arrives populated, because re-typing a promo to change one
+      // word is how an owner loses the other ones.
+      expect(find.text('Edit promotion'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, original.title), findsOneWidget);
+
+      // The code identifies the Firestore document, so it is locked on edit.
+      // Found by label rather than by value: the code also appears on the card
+      // behind the sheet, so asserting on the text would match two widgets and
+      // pass for the wrong one.
+      expect(
+        tester.widget<TextField>(
+          find.descendant(
+            of: find.byWidgetPredicate((Widget w) =>
+                w is TextFormField && w.controller?.text == original.code),
+            matching: find.byType(TextField),
+          ),
+        ).enabled,
+        isFalse,
+        reason: 'the code is the Firestore document id and must not be editable',
+      );
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, original.title),
+        'Edited headline',
+      );
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edited headline'), findsOneWidget);
+      expect(find.text(original.title), findsNothing);
+    });
+
+    testWidgets('promo delete asks first, then removes the card',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.promos,
+      ));
+
+      final Promo target = MockData.promos.first;
+      final Finder remove = find.byTooltip('Remove ${target.title}').first;
+      await revealByDragging(tester, remove, find.byType(ListView).last);
+      await tester.tap(remove);
+      await tester.pumpAndSettle();
+
+      // Deleting an offer a customer can currently see is worth one tap of
+      // friction, and the dialog says pause instead for the temporary case.
+      expect(find.text('Remove promotion'), findsOneWidget);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(target.title), findsNothing);
+      expect(find.text(target.title), findsNothing);
     });
 
     testWidgets('settings section edits store config and reports the backend',

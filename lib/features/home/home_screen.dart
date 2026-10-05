@@ -38,10 +38,19 @@ class HomeScreen extends StatelessWidget {
               // Best Offer: one rotating strip holding every promo. The former
               // "Special Offers" header and offer tiles are gone — the carousel
               // replaces both rather than sitting above them.
-              const SliverToBoxAdapter(
+              //
+              // "See all" is here even though the carousel already holds every
+              // promo. Two reasons it earns its place rather than being redundant:
+              // the strip auto-advances, so a customer reading the last promo has
+              // no way to hold it still; and the sheet is a list they can scroll
+              // and tap at their own pace, which is the only way to actually
+              // compare three offers at once.
+              SliverToBoxAdapter(
                 child: BwSectionHeader(
                   title: 'Best Offer',
-                  padding: EdgeInsets.fromLTRB(
+                  actionLabel: 'See all',
+                  onAction: () => _showPromoSheet(context, catalog),
+                  padding: const EdgeInsets.fromLTRB(
                     BwSpacing.gutter,
                     BwSpacing.lg,
                     BwSpacing.gutter,
@@ -112,6 +121,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// Opens the promo detail, or every promo when [promo] is null ("See all").
   static void _showPromoSheet(BuildContext context, CatalogProvider catalog, {Promo? promo}) {
     showModalBottomSheet<void>(
       context: context,
@@ -123,75 +133,154 @@ class HomeScreen extends StatelessWidget {
         final List<Promo> list = promo != null ? <Promo>[promo] : catalog.promos;
 
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(BwSpacing.xl),
+          child: ConstrainedBox(
+            // A bottom sheet is unbounded by default, so a Column of promos grows
+            // until it runs off the top of the screen. With three seeded promos
+            // that never showed; now that the admin can add as many as they like,
+            // it is the common case rather than the edge case. The cap plus the
+            // scroll view is what makes "See all" safe to offer at all.
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(ctx).height * 0.7,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: BwColors.border,
-                      borderRadius: BorderRadius.circular(BwRadius.pill),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    BwSpacing.xl,
+                    BwSpacing.md,
+                    BwSpacing.xl,
+                    0,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: BwColors.border,
+                        borderRadius: BorderRadius.circular(BwRadius.pill),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: BwSpacing.xl),
-                const Text(
-                  'Active promotions',
-                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: BwColors.text),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    BwSpacing.xl,
+                    BwSpacing.xl,
+                    BwSpacing.xl,
+                    0,
+                  ),
+                  child: Text(
+                    promo != null ? 'Promotion' : 'All promotions',
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: BwColors.text,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: BwSpacing.lg),
-                ...list.map(
-                  (Promo p) => Padding(
-                    padding: const EdgeInsets.only(bottom: BwSpacing.md),
-                    child: Container(
-                      padding: const EdgeInsets.all(BwSpacing.lg),
-                      decoration: BoxDecoration(
-                        color: BwColors.bg,
-                        borderRadius: BorderRadius.circular(BwRadius.card),
-                        border: Border.all(color: BwColors.border),
-                      ),
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Text(
-                                  p.title,
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: BwColors.text,
-                                  ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(p.subtitle, style: const TextStyle(fontSize: 13, color: BwColors.textMuted)),
-                              ],
-                            ),
+                Flexible(
+                  child: list.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.fromLTRB(BwSpacing.xl, 0, BwSpacing.xl, BwSpacing.lg),
+                          child: Text(
+                            'No promotions are running right now.',
+                            style: const TextStyle(fontSize: 14, color: BwColors.textMuted),
                           ),
-                          const SizedBox(width: BwSpacing.md),
-                          BwBadge(label: p.code, variant: BwBadgeVariant.outline),
-                        ],
-                      ),
-                    ),
-                  ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.fromLTRB(
+                            BwSpacing.xl,
+                            0,
+                            BwSpacing.xl,
+                            BwSpacing.lg,
+                          ),
+                          itemCount: list.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: BwSpacing.sm),
+                          itemBuilder: (_, int i) => _PromoRow(promo: list[i]),
+                        ),
                 ),
-                const SizedBox(height: BwSpacing.sm),
-                BwButton(
-                  label: 'Got it',
-                  onPressed: () => Navigator.of(ctx).pop(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    BwSpacing.xl,
+                    0,
+                    BwSpacing.xl,
+                    BwSpacing.xl,
+                  ),
+                  child: BwButton(
+                    label: 'Got it',
+                    onPressed: () => Navigator.of(ctx).pop(),
+                  ),
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// One promo as a row in the "all promotions" sheet.
+///
+/// Shows the offer the way a customer can act on it — what it is, and what to do
+/// — rather than repeating the badge code the carousel already shows. The code
+/// is only useful to someone quoting it at the counter, which is the one job the
+/// carousel's badge is doing.
+class _PromoRow extends StatelessWidget {
+  const _PromoRow({required this.promo});
+
+  final Promo promo;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> bits = <String>[
+      if (promo.badge != null && promo.badge!.isNotEmpty) promo.badge!,
+      if (promo.discountPercent != null) '${promo.discountPercent}% off',
+      if (promo.buyXGetY != null && promo.buyXGetY!.isNotEmpty) promo.buyXGetY!,
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(BwSpacing.lg),
+      decoration: BoxDecoration(
+        color: BwColors.bg,
+        borderRadius: BorderRadius.circular(BwRadius.card),
+        border: Border.all(color: BwColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            promo.title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: BwColors.text,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            promo.subtitle,
+            style: const TextStyle(fontSize: 13, height: 1.35, color: BwColors.textMuted),
+          ),
+          if (bits.isNotEmpty) ...<Widget>[
+            const SizedBox(height: BwSpacing.md),
+            Wrap(
+              spacing: BwSpacing.xs,
+              runSpacing: BwSpacing.xs,
+              children: <Widget>[
+                for (final String bit in bits)
+                  BwBadge(label: bit, variant: BwBadgeVariant.outline, dense: true),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

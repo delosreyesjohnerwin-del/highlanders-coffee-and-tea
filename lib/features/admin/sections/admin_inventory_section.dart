@@ -9,6 +9,7 @@ import '../../../data/models/menu.dart';
 import '../../../state/catalog_provider.dart';
 import '../admin_dashboard_screen.dart';
 import 'admin_overview_section.dart';
+import 'admin_sheet_actions.dart';
 
 /// Inventory management: the full menu with stock levels, plus add/edit.
 ///
@@ -587,9 +588,10 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
                     ),
                     const SizedBox(height: BwSpacing.xl),
 
-                    _SheetActions(
+                    AdminSheetActions(
                       submitLabel: editing ? 'Save changes' : 'Add item',
                       onSubmit: _submit,
+                      deleteTooltip: 'Remove item',
                       onDelete: editing ? () => _confirmDelete(context) : null,
                     ),
                   ],
@@ -640,55 +642,6 @@ class _ItemFormSheetState extends State<_ItemFormSheet> {
 
     context.read<CatalogProvider>().removeItem(item.id);
     Navigator.of(context).pop();
-  }
-}
-
-/// Sticky bottom action row shared by the admin sheets.
-class _SheetActions extends StatelessWidget {
-  const _SheetActions({
-    required this.submitLabel,
-    required this.onSubmit,
-    this.onDelete,
-  });
-
-  final String submitLabel;
-  final VoidCallback onSubmit;
-  final VoidCallback? onDelete;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        if (onDelete != null) ...<Widget>[
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, size: 20),
-            tooltip: 'Remove item',
-            onPressed: onDelete,
-          ),
-          const SizedBox(width: BwSpacing.sm),
-        ],
-        Expanded(
-          child: TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ),
-        const SizedBox(width: BwSpacing.sm),
-        Expanded(
-          flex: 2,
-          child: FilledButton(
-            onPressed: onSubmit,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(BwRadius.card),
-              ),
-            ),
-            child: Text(submitLabel),
-          ),
-        ),
-      ],
-    );
   }
 }
 

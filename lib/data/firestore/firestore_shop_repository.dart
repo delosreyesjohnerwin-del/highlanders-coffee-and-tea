@@ -201,6 +201,12 @@ class FirestoreShopRepository implements ShopRepository {
         () => _collection(FirestorePaths.promos).doc(PromoSerialisation.idOf(promo)).set(promo.toMap()),
       );
 
+  @override
+  Future<WriteFailure?> deletePromo(String code) => _guard(
+        'delete promo $code',
+        () => _collection(FirestorePaths.promos).doc(code).delete(),
+      );
+
   // --- admin reads --------------------------------------------------------
 
   @override

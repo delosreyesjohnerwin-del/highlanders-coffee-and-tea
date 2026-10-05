@@ -40,6 +40,8 @@ abstract class ShopRepository {
 
   Future<WriteFailure?> savePromo(Promo promo);
 
+  Future<WriteFailure?> deletePromo(String code);
+
   // --- admin --------------------------------------------------------------
 
   Future<AdminSnapshot> loadAdmin();
