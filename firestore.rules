@@ -2,8 +2,24 @@ rules_version = '2';
 
 // Highlanders Coffee & Tea — Firestore rules
 //
-// Deploy by hand (Rules editor in the Firebase console); there is no CLI in
-// this project's toolchain yet.
+// ## Deploying
+//
+// The Rules editor in the console works, but it cannot be diffed, reviewed or
+// rolled back, and a rule edit here is a security change. Deploy from the CLI
+// against a staged directory instead:
+//
+//   $stage = New-Item -ItemType Directory -Force "$env:TEMP\hl-rules"
+//   Copy-Item firestore.rules "$stage\firestore.rules" -Force
+//   '{"firestore":{"rules":"firestore.rules"}}' > "$stage\firebase.json"
+//   firebase deploy --only firestore:rules --project <project-id> --config "$stage\firebase.json"
+//
+// `--config` is needed because the staged directory is not the project root, and
+// without it the CLI walks upward looking for a `firebase.json` and refuses.
+// Then verify the deployed copy is byte-identical to this file — a silently
+// half-applied ruleset is the failure mode worth guarding against.
+//
+// REST cannot be used instead: `POST .../releases` returns 400 and `PATCH` on a
+// ruleset returns "Unknown name rulesetName". The CLI is the only working path.
 //
 // The one thing worth reading closely: the `users` rules. Role is the entire
 // authorisation model for the admin panel, so it is the one place where a
@@ -98,12 +114,34 @@ service cloud.firestore {
     // customer reading somebody else's order history, and the field is required
     // so it cannot be omitted.
     match /orders/{orderId} {
+      // Both read rules are written per-document on purpose. Firestore
+      // evaluates a list rule against every document the query *would* return,
+      // so a customer query that omits the customerUid filter fails evaluation
+      // against other customers' orders and is refused with PERMISSION_DENIED.
+      // No request.query clause is needed — and there is no `where` on
+      // request.query to write one with; only limit, offset and orderBy exist.
       allow get: if isAdmin() || (isSignedIn() && resource.data.customerUid == request.auth.uid);
       allow list: if isAdmin()
-                  || (isSignedIn() && request.query.limit(1).where('customerUid').isEqualTo(request.auth.uid));
+                  || (isSignedIn() && resource.data.customerUid == request.auth.uid);
 
-      allow create: if isSignedIn()
-                    && request.resource.data.customerUid == request.auth.uid;
+      // Customers may create only their own order. The admin exception exists for
+      // exactly one thing: the one-time seed, which writes trading history
+      // attributed to synthetic uids that match no account.
+      //
+      // That exception costs nothing, and it is worth saying why rather than
+      // leaving it as an unexplained `|| isAdmin()`. An admin can already update
+      // any order to any status and delete any order — so an admin could already
+      // manufacture any order that exists. Allowing them to create one directly is
+      // not a new capability, only a shorter path to a state they could reach
+      // anyway. The rule that actually stops a *customer* from claiming someone
+      // else's order is the `customerUid` equality below, and that is unchanged.
+      //
+      // The alternative was not seeding orders at all, which keeps the rule tighter
+      // but leaves the revenue chart, the order pipeline and the active-customer
+      // count all at zero on first run — an empty admin panel reads as a broken
+      // app rather than an empty shop.
+      allow create: if isAdmin()
+                    || (isSignedIn() && request.resource.data.customerUid == request.auth.uid);
 
       // Customers do not update orders: the status field belongs to the shop, and
       // letting a client set it would let them mark their own order delivered.
@@ -111,7 +149,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // --- staff -----------------------------------------------------------
+    //
+    // The roster is admin-only in both directions. Staff are not admins, so they
+    // get no read: there is no screen for them to use it on, and a roster carries
+    // names and phone numbers.
+    match /staffMembers/{id} {
+      allow read, write: if isAdmin();
+    }
+
     // --- drivers ---------------------------------------------------------
+    //
+    // Kept for per-rider documents (live location, last seen). Distinct from
+    // `staffMembers`, which is the roster the admin panel edits.
     match /drivers/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -123,6 +173,16 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
+
+    // Two "Home" entries is possible: the rules scope addresses by uid, not by
+    // uniqueness of the label, and enforcing a single default would need a
+    // transaction across every address document of a customer. `defaultAddress`
+    // breaks the tie by taking the first flagged entry, so a duplicate shows as a
+    // list with two rows rather than a wrong delivery address.
+    //
+    // TODO(owner): if customers start creating many addresses, move the default
+    // flag onto `users/{uid}` so it is a single-field write and needs no
+    // cross-document rule at all.
 
     // Anything not named above is closed. New collections deny by default until
     // someone thinks about who should reach them.
