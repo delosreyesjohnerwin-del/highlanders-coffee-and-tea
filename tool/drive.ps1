@@ -42,11 +42,19 @@ if (-not (Test-Path $platformTools)) { throw "platform-tools not found at $platf
 $env:Path = "$platformTools;$env:Path"
 
 function Get-DensityScale {
-  $t = (& adb shell wm density) -join " "
+  $t = (& adb shell wm density 2>$null) -join " "
   if ($t -match "Override density:\s*(\d+)") { $d = [int]$Matches[1] }
   elseif ($t -match "Physical density:\s*(\d+)") { $d = [int]$Matches[1] }
   else { throw "no density in: $t" }
   return ($d / 160.0)
+}
+
+# Physical pixels. The swipe path needs these so it can derive its own gesture
+# instead of typing coordinates into a file -- see the note at that call.
+function Get-ScreenPx {
+  $t = (& adb shell wm size 2>$null) -join " "
+  if ($t -notmatch "(\d+)x(\d+)") { throw "no size in: $t" }
+  return @{ W = [int]$Matches[1]; H = [int]$Matches[2] }
 }
 
 function Get-Tree([double]$scale) {
@@ -133,21 +141,34 @@ Write-Host ("matched [{0}]: {1}  @x={2} y={3}  {4} x {5} dp" -f $Index, $whatTar
 switch ($Action) {
   "exists" { Write-Host "EXISTS" }
   "tap" {
-    & adb shell input tap $target.CX $target.CY | Out-Null
+    $null = & adb shell input tap $target.CX $target.CY 2>$null
     Write-Host "tapped"
   }
   "type" {
     if (-not $Text) { throw "-Text is required for -Action type" }
-    # `input text` treats space as a separator and mangles several shell
-    # metacharacters, so it is given each word separately.
-    foreach ($word in ($Text -split '\s+')) {
-      & adb shell input text $word | Out-Null
+    # `input text` cannot carry a space: the shell would split the argument, and
+    # sending each word separately used to produce "DeviceTest" from
+    # "Device Test" with no error. Spaces are sent as their own keyevent.
+    $words = @($Text -split '\s+' | Where-Object { $_ -ne '' })
+    for ($i = 0; $i -lt $words.Count; $i++) {
+      if ($i -gt 0) { $null = & adb shell input keyevent 62 2>$null }
+      $null = & adb shell input text $words[$i] 2>$null
     }
-    Write-Host "typed $((($Text -split '\s+') | Measure-Object).Count) word(s)"
+    Write-Host "typed $($words.Count) word(s)"
   }
   "swipeup" {
-    & adb shell input swipe 360 1300 360 500 300 | Out-Null
-    Write-Host "swiped up"
+    # Derived from the device's own reported size. This used to be
+    # `input swipe 360 1300 360 500 300` -- hard-coded pixels, in the same file
+    # whose header explains at length why hard-coded pixels rot silently. They
+    # would have been wrong on a device with a different screen or density, and
+    # a swipe that lands in empty space reports success: `input swipe` exits 0
+    # whether it scrolled anything or not.
+    $sz = Get-ScreenPx
+    $cx = [int]($sz.W / 2)
+    $fromY = [int]($sz.H * 0.75)
+    $toY = [int]($sz.H * 0.25)
+    $null = & adb shell input swipe $cx $fromY $cx $toY 300 2>$null
+    Write-Host "swiped up ($cx, $fromY -> $toY) on $($sz.W)x$($sz.H)"
   }
 }
 
