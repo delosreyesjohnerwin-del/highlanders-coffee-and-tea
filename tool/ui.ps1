@@ -14,6 +14,7 @@
 # content-desc. Plain Text widgets can appear in either.
 param(
   [switch]$NoSize,
+  [switch]$All,
   [string]$OutFile = ""
 )
 
@@ -25,11 +26,10 @@ $env:Path = "$platformTools;$env:Path"
 
 $pkg = "com.highlanderscoffee.highlanders_coffee"
 
-# adb writes its progress lines to stderr even on success — "1 file pulled" is a
-# success message, not a failure. With ErrorActionPreference left at Stop, PowerShell
-# promotes that to a terminating error and the script dies reporting a successful
-# pull as a crash. Relaxed for the adb calls only; the throw statements below stay
-# meaningful because those are real failures we detect ourselves.
+# adb writes progress to stderr even on success, and PowerShell promotes that
+# to an error under Stop. Relaxed for the adb calls; the script's own `throw`s
+# still mean something because they are detected, not inferred from adb's exit
+# noise. The pull's stderr is separately redirected to $null below.
 $ErrorActionPreference = "Continue"
 
 # Density, not dpi: the override wins over the physical value, and the phone can
@@ -54,8 +54,14 @@ Write-Host ("screen: {0} x {1} dp  (density {2}, scale {3})" -f $screenWdp, $scr
 
 if ($OutFile) { if (Test-Path $OutFile) { Remove-Item $OutFile -Force } }
 
-& adb shell uiautomator dump /sdcard/ui.xml | Out-Null
-& adb pull /sdcard/ui.xml $env:TEMP\hl-ui.xml | Out-Null
+# Redirected to $null rather than left to the error stream. adb prints
+# "1 file pulled" on stderr as its success message, and PowerShell turns a
+# native stderr write into a NativeCommandError -- so the pull's good news was
+# being reported as the script's failure. Anything genuinely wrong is caught by
+# the file check below, which is a real detection rather than an inference from
+# adb's chatter.
+$null = & adb shell uiautomator dump /sdcard/ui.xml 2>$null
+$null = & adb pull /sdcard/ui.xml $env:TEMP\hl-ui.xml 2>$null
 
 # uiautomator writes the dump to the device first; a stale file from a previous
 # dump would silently describe the old screen, so the pull is verified rather
@@ -109,4 +115,36 @@ if ($textNodes.Count -gt 0) {
   }
 }
 
+if ($All) {
+  # The labelled nodes above are only the ones Flutter gave a description to. An
+  # empty TextField exposes neither text nor content-desc -- its labelText lives
+  # in the decoration, which uiautomator does not surface -- so the fields a
+  # driver needs to tap are precisely the ones missing from both lists.
+  #
+  # This mode prints the structural nodes too: class, whether they are
+  # tappable/focusable, and what is left of their label. It is the difference
+  # between "the fields are not there" and "the fields are there and unlabelled",
+  # which look identical from the outside and have very different fixes.
+  Write-Host ""
+  Write-Host "--- all nodes (class | clickable | focusable | label) ---"
+  foreach ($n in $xml.SelectNodes("//node")) {
+    $g = Convert-Bounds $n.GetAttribute("bounds")
+    $desc = $n.GetAttribute("content-desc")
+    $txt = $n.GetAttribute("text")
+    $label = if ($desc) { $desc } elseif ($txt) { $txt } else { "-" }
+    $cls = $n.GetAttribute("class")
+    if (-not $cls) { $cls = "?" }
+    $short = $cls -replace '^android\.', '' -replace '^androidx\.', ''
+    Write-Host ("  {0,5}x{1,-5} @{2,-6},{3,-6} {4,-26} {5,-1} {6,-1}  {7}" -f `
+      $g.W, $g.H, $g.L, $g.T, $short,
+      ($n.GetAttribute("clickable")[0]), ($n.GetAttribute("focusable")[0]), $label)
+  }
+}
+
 if ($OutFile) { Move-Item $env:TEMP\hl-ui.xml $OutFile -Force; Write-Host ""; Write-Host "saved: $OutFile" }
+
+# adb reports "1 file pulled" on stderr even when everything worked, and that
+# reaches PowerShell as a native stderr write. Without this, the script exits 1
+# on a completely successful dump -- so a caller that checks $? sees a failure
+# for a run that printed exactly what was asked for.
+exit 0

@@ -4,6 +4,10 @@
 #   powershell -File tool\drive.ps1 -Find "Email" -Action type -Text "a@b.com"
 #   powershell -File tool\drive.ps1 -Find "Log In" -Action tap -Wait 4
 #
+# By class, for widgets with no label to match on:
+#
+#   powershell -File tool\drive.ps1 -Class widget.EditText -Index 1 -Action tap
+#
 # ## Why matching on text rather than hard-coded coordinates
 #
 # Hard-coded tap points are the obvious shortcut and they rot silently. The
@@ -14,8 +18,16 @@
 #
 # So every action re-reads the tree and resolves the centre from the live bounds.
 # Slower, and it cannot silently tap the wrong thing.
+#
+# That leaves widgets with no label at all, which is not a hypothetical: an empty
+# Flutter TextField keeps its labelText in the decoration, and uiautomator does
+# not surface decoration text, so the login screen's email and password fields
+# have neither content-desc nor text. Matching by class resolves from the same
+# live bounds, so it keeps the guarantee. Matching by a coordinate written into
+# this file would not.
 param(
-  [Parameter(Mandatory = $true)][string]$Find,
+  [string]$Find,
+  [string]$Class = "",
   [ValidateSet("tap", "type", "swipeup", "exists")][string]$Action = "tap",
   [string]$Text = "",
   [int]$Wait = 0,
@@ -38,19 +50,22 @@ function Get-DensityScale {
 }
 
 function Get-Tree([double]$scale) {
-  & adb shell uiautomator dump /sdcard/ui.xml | Out-Null
-  & adb pull /sdcard/ui.xml $env:TEMP\hl-drive.xml | Out-Null
+  $null = & adb shell uiautomator dump /sdcard/ui.xml 2>$null
+  $null = & adb pull /sdcard/ui.xml $env:TEMP\hl-drive.xml 2>$null
   $xml = [xml](Get-Content "$env:TEMP\hl-drive.xml" -Raw)
 
-  # content-desc first, then text. Flutter puts a TextField's semantics label in
-  # content-desc, while plain Text nodes can land in either depending on how the
-  # widget was composed, so both are searched and the label wins ties.
+  # Every node, not just labelled ones. Filtering to content-desc/text here is
+  # what made the login fields unreachable in the first place -- they are real,
+  # tappable EditTexts that carry no label at all, and a label-only tree reports
+  # them as not being on screen.
+  #
+  # content-desc first, then text: Flutter puts a TextField's semantics label in
+  # content-desc, while plain Text nodes can land in either.
   $out = @()
-  foreach ($n in $xml.SelectNodes("//node[@content-desc!='' or @text!='']")) {
+  foreach ($n in $xml.SelectNodes("//node")) {
     $desc = $n.GetAttribute("content-desc")
     $txt = $n.GetAttribute("text")
-    $label = if ($desc) { $desc } else { $txt }
-    if (-not $label) { continue }
+    $label = if ($desc) { $desc } elseif ($txt) { $txt } else { "" }
 
     $b = $n.GetAttribute("bounds")
     if ($b -notmatch '\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]') { continue }
@@ -60,6 +75,7 @@ function Get-Tree([double]$scale) {
     $out += [pscustomobject]@{
       Label  = $label
       Text   = $txt
+      Class  = $n.GetAttribute("class")
       CX     = [int](($l + $r) / 2)
       CY     = [int](($t2 + $b2) / 2)
       Wdp    = [math]::Round(($r - $l) / $scale, 1)
@@ -70,30 +86,49 @@ function Get-Tree([double]$scale) {
   return $out
 }
 
+if (-not $Find -and -not $Class) {
+  Write-Host "supply -Find <label> or -Class <android widget class>"
+  exit 1
+}
+
 $scale = Get-DensityScale
 $tree = Get-Tree $scale
 
-if ($Exact) {
+if ($Class) {
+  # Suffix match, so `-Class EditText` works whether or not the caller includes
+  # the `android.` package prefix. The dump carries `android.widget.EditText`;
+  # ui.ps1 strips that prefix when displaying, which makes it easy to write the
+  # short form here by mistake. Suffix matching makes both correct rather than
+  # silently finding nothing.
+  $matches = @($tree | Where-Object { $_.Class -like "*$Class" })
+} elseif ($Exact) {
   $matches = @($tree | Where-Object { $_.Label -ceq $Find })
 } else {
-  $matches = @($tree | Where-Object { $_.Label -like "*$Find*" })
+  $matches = @($tree | Where-Object { $_.Label -like "*$Find*" -and $_.Label })
 }
 
+$what = if ($Class) { "class $Class" } else { "'$Find'" }
+
 if ($matches.Count -eq 0) {
-  Write-Host "NOT FOUND: $Find"
+  Write-Host "NOT FOUND: $what"
   Write-Host ""
   Write-Host "on screen:"
-  foreach ($n in $tree) { Write-Host ("  {0,4} x {1,-6}  @x={2,-5} y={3,-6}  {4}" -f $n.Wdp, $n.Hdp, [math]::Round($n.CX / $scale, 0), [math]::Round($n.CY / $scale, 0), $n.Label) }
+  foreach ($n in $tree) {
+    $shown = if ($n.Label) { $n.Label } else { "-" }
+    Write-Host ("  {0,4} x {1,-6}  @x={2,-5} y={3,-6}  {4,-26} {5}" -f `
+      $n.Wdp, $n.Hdp, [math]::Round($n.CX / $scale, 0), [math]::Round($n.CY / $scale, 0), $n.Class, $shown)
+  }
   exit 1
 }
 
 if ($Index -ge $matches.Count) {
-  Write-Host "only $($matches.Count) match(es) for '$Find', wanted index $Index"
+  Write-Host "only $($matches.Count) match(es) for $what, wanted index $Index"
   exit 1
 }
 
 $target = $matches[$Index]
-Write-Host ("matched [{0}]: {1}  @x={2} y={3}  {4} x {5} dp" -f $Index, $target.Label, [math]::Round($target.CX / $scale, 0), [math]::Round($target.CY / $scale, 0), $target.Wdp, $target.Hdp)
+$whatTarget = if ($target.Label) { $target.Label } else { $target.Class }
+Write-Host ("matched [{0}]: {1}  @x={2} y={3}  {4} x {5} dp" -f $Index, $whatTarget, [math]::Round($target.CX / $scale, 0), [math]::Round($target.CY / $scale, 0), $target.Wdp, $target.Hdp)
 
 switch ($Action) {
   "exists" { Write-Host "EXISTS" }

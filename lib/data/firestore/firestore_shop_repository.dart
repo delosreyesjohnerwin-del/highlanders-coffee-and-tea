@@ -351,9 +351,25 @@ class FirestoreShopRepository implements ShopRepository {
     // The `where` is not optional. The `list` rule is evaluated per document
     // the query *would* return, so omitting the filter makes Firestore evaluate
     // the rule against other customers' orders and refuse the whole query.
+    //
+    // There is deliberately no `orderBy` here or in [watchOrdersFor]. An
+    // equality filter combined with an orderBy needs a composite index, and this
+    // project has none declared -- so Firestore answers FAILED_PRECONDITION
+    // "The query requires an index" and the whole listener dies. It was tried on
+    // a real device: the sign-in succeeded, and the customer's order history was
+    // silently empty forever after.
+    //
+    // Dropping the server-side sort costs nothing, because nothing depended on
+    // it. Both queries sort by parsed `createdAt` immediately below anyway, and
+    // neither carries a `limit`, so the full filtered result set arrives
+    // whatever order it arrives in. See [orderSortField]: the re-sort exists
+    // precisely because server order was never trusted to begin with.
+    //
+    // If a `limit` is ever added to either query this becomes wrong -- a limit
+    // without an ordering returns an arbitrary N documents. That is the point at
+    // which the composite index has to be created, not before.
     final QuerySnapshot<Map<String, dynamic>> snapshot = await _collection(FirestorePaths.orders)
         .where('customerUid', isEqualTo: uid)
-        .orderBy(orderSortField, descending: true)
         .get();
 
     final List<Order> list = snapshot.docs.map(_orderFrom).toList();
@@ -361,10 +377,15 @@ class FirestoreShopRepository implements ShopRepository {
     return list;
   }
 
+  /// Live order history for one customer.
+  ///
+  /// No `orderBy`, for the same reason as [loadOrdersFor]: an equality filter
+  /// plus a sort needs a composite index this project does not have, and the
+  /// result is a listener that errors the instant it attaches. The docs arrive
+  /// in unspecified order and are sorted by parsed `createdAt` in the map below.
   @override
   Stream<List<Order>> watchOrdersFor(String uid) => _collection(FirestorePaths.orders)
       .where('customerUid', isEqualTo: uid)
-      .orderBy(orderSortField, descending: true)
       .snapshots()
       .map((QuerySnapshot<Map<String, dynamic>> s) {
         final List<Order> list = s.docs.map(_orderFrom).toList();
