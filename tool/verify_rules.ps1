@@ -267,17 +267,30 @@ $seedResults = [ordered]@{
 # so this is checked rather than discarded. The earlier version used `$null =` and
 # produced a wall of confusing failures.
 $seedFailed = @($seedResults.GetEnumerator() | Where-Object { $_.Value -ne "ALLOW" })
+
+# Through `Assert`, so the fixtures land in the same tally as everything else.
+# They were previously printed by a hand-rolled loop that looked identical but
+# never touched `$script:checks`, which made a 33-line all-green run announce
+# "all 27 rule assertions passed". A count that under-reports is worse than no
+# count: it is the one number a reader checks the run against, and it disagrees
+# with the output directly above it.
+#
+# Counting them is also correct on the merits rather than for tidiness -- "a
+# customer can create their own user doc" is a claim about the rules, exactly as
+# much as "a customer cannot read someone else's" below.
 foreach ($e in $seedResults.GetEnumerator()) {
-  if ($e.Value -eq "ALLOW") {
-    Write-Host ("  ok    {0,-58} {1}" -f $e.Key, $e.Value) -ForegroundColor DarkGray
-  } else {
-    Write-Host ("  FAIL  {0,-58} {1}" -f $e.Key, $e.Value) -ForegroundColor Red
-  }
+  Assert $e.Key "ALLOW" $e.Value
 }
 
 Write-Host "`nusers" -ForegroundColor Cyan
 Assert "customer reads own doc"                "ALLOW" (Get-Doc $customer "users" $customer.uid)
-Assert "customer reads someone else's doc"     "DENIED" (Get-Doc $customer "users" "VK0Fw0kHCOPaeCmYMcpenHgJvp12")
+# The admin's uid, taken from the sign-in response rather than pasted in. A real
+# account identifier does not belong in a published repo, and the sign-in already
+# returns it -- so the literal was redundant as well as a leak. Reading *this*
+# particular document is also the stronger assertion: it is the highest-value
+# target in the collection, so a DENIED here means the rule genuinely closes the
+# collection to other users and not just that a made-up id happened to miss.
+Assert "customer reads someone else's doc"     "DENIED" (Get-Doc $customer "users" $admin.uid)
 Assert "customer promotes self to admin"        "DENIED" (Set-Doc $customer "users" $customer.uid @{ role = (FStr "admin") })
 Assert "customer deletes own doc"              "DENIED" (Del-Doc $customer "users" $customer.uid)
 Assert "admin creates a doc for someone else"  "DENIED" (Set-Doc $admin "users" "someone-else" @{ uid = (FStr "someone-else"); role = (FStr "admin") })
@@ -341,14 +354,24 @@ try {
 
 Write-Host ""
 $failedSeeds = $seedFailed.Count
-if ($script:failures -eq 0 -and $failedSeeds -eq 0) {
-  Write-Host "all $($script:checks) rule assertions passed" -ForegroundColor Green
-  exit 0
-}
+
+# Every branch below states what was actually true. The earlier version collapsed
+# "fixtures failed" and "rules failed" into one line, so a run where two fixtures
+# could not be written and all 27 assertions passed printed "0 of 27 rule
+# assertions FAILED" in red -- a count of zero failures described as a failure,
+# which reads as a broken script rather than a broken precondition.
 if ($failedSeeds -gt 0) {
-  Write-Host "$failedSeeds fixture(s) could not be created - the assertions below are not meaningful" -ForegroundColor Red
+  Write-Host "$failedSeeds fixture(s) could not be created - every assertion reading one is meaningless" -ForegroundColor Red
 }
-Write-Host "$($script:failures) of $($script:checks) rule assertions FAILED" -ForegroundColor Red
+if ($script:failures -eq 0) {
+  if ($failedSeeds -eq 0) {
+    Write-Host "all $($script:checks) checks passed" -ForegroundColor Green
+    exit 0
+  }
+  Write-Host "the $($script:checks - $failedSeeds) checks with valid fixtures passed, but the run is not clean" -ForegroundColor Red
+  exit 1
+}
+Write-Host "$($script:failures) of $($script:checks) checks FAILED" -ForegroundColor Red
 exit 1
 
 # --- known limits -------------------------------------------------------------
