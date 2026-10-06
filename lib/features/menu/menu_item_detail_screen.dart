@@ -11,8 +11,10 @@ import '../../data/models/menu.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
 
-/// Item detail: large image, name, price, description, optional sizes and a
-/// sticky add-to-cart bar.
+/// Item detail: large image, name, price, description and a sticky
+/// add-to-cart bar. There is deliberately no size selector: the café's menu
+/// has one price per item, and the previous hard-coded "Large +₱15" upsell
+/// charged customers a price the owner never set.
 class MenuItemDetailScreen extends StatefulWidget {
   const MenuItemDetailScreen({super.key, required this.item});
 
@@ -24,15 +26,6 @@ class MenuItemDetailScreen extends StatefulWidget {
 
 class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
   int _qty = 1;
-  String _size = 'Regular';
-
-  static const List<({String label, num delta})> _sizes = <({num delta, String label})>[
-    (label: 'Regular', delta: 0),
-    (label: 'Large', delta: 15),
-  ];
-
-  num get _unitPrice =>
-      widget.item.price + _sizes.firstWhere((({String label, num delta}) s) => s.label == _size).delta;
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +74,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
                     ),
                     const SizedBox(width: BwSpacing.md),
                     Text(
-                      Fmt.peso(_unitPrice),
+                      Fmt.peso(item.price),
                       style: const TextStyle(
                         fontSize: 21,
                         fontWeight: FontWeight.w800,
@@ -118,67 +111,6 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
                   style: const TextStyle(fontSize: 14.5, height: 1.55, color: BwColors.textMuted),
                 ),
 
-                const SizedBox(height: BwSpacing.xl),
-                const Text(
-                  'Choose a size',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: BwColors.text),
-                ),
-                const SizedBox(height: BwSpacing.md),
-                Row(
-                  children: _sizes.map((({String label, num delta}) s) {
-                    final bool selected = _size == s.label;
-
-                    return Expanded(
-                      child: Padding(
-                        padding: EdgeInsets.only(right: s.label == _sizes.last.label ? 0 : BwSpacing.sm),
-                        child: Material(
-                          color: selected ? BwColors.inverse : BwColors.surface,
-                          borderRadius: BorderRadius.circular(BwRadius.card),
-                          child: InkWell(
-                            onTap: () => setState(() => _size = s.label),
-                            borderRadius: BorderRadius.circular(BwRadius.card),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: BwSpacing.lg),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(BwRadius.card),
-                                border: Border.all(
-                                  color: selected ? BwColors.inverse : BwColors.borderStrong,
-                                  width: BwStroke.strong,
-                                ),
-                              ),
-                              child: Column(
-                                children: <Widget>[
-                                  Text(
-                                    s.label,
-                                    style: TextStyle(
-                                      fontSize: 14.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: selected ? BwColors.onInverse : BwColors.text,
-                                    ),
-                                  ),
-                                  if (s.delta != 0) ...<Widget>[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '+${Fmt.pesoWhole(s.delta)}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                        color: selected
-                                            ? BwColors.onInverse.withValues(alpha: 0.7)
-                                            : BwColors.textMuted,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(growable: false),
-                ),
-
                 if (inCart > 0) ...<Widget>[
                   const SizedBox(height: BwSpacing.xl),
                   BwCard(
@@ -205,7 +137,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
 
           _AddBar(
             qty: _qty,
-            unitPrice: _unitPrice,
+            unitPrice: item.price,
             onMinus: () => setState(() => _qty = _qty > 1 ? _qty - 1 : 1),
             // Never let the stepper promise more than the shop can make.
             onPlus: _qty >= item.stock ? null : () => setState(() => _qty++),

@@ -386,14 +386,14 @@ void main() {
 
       final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
 
-      catalog.updatePrice('m-kopi', 60);
+      catalog.updatePrice('cl-americano', 60);
 
       // Optimistic: local state is already updated synchronously.
-      expect(catalog.itemById('m-kopi')?.price, 60);
+      expect(catalog.itemById('cl-americano')?.price, 60);
 
       await settle();
       final CatalogSnapshot snapshot = await repo.loadCatalog();
-      expect(snapshot.items.firstWhere((MenuItem i) => i.id == 'm-kopi').price, 60);
+      expect(snapshot.items.firstWhere((MenuItem i) => i.id == 'cl-americano').price, 60);
     });
 
     test('a stock edit reaches the repository', () async {
@@ -402,11 +402,11 @@ void main() {
 
       final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
 
-      catalog.setStock('m-latte', 3);
+      catalog.setStock('cl-cafe-latte', 3);
 
       await settle();
       final CatalogSnapshot snapshot = await repo.loadCatalog();
-      final MenuItem latte = snapshot.items.firstWhere((MenuItem i) => i.id == 'm-latte');
+      final MenuItem latte = snapshot.items.firstWhere((MenuItem i) => i.id == 'cl-cafe-latte');
       expect(latte.stock, 3);
       // Below the reorder level, so the restock list should pick it up.
       expect(latte.status, StockStatus.lowStock);
@@ -487,13 +487,13 @@ void main() {
 
       final CatalogProvider catalog = CatalogProvider(repository: repo)..bind();
 
-      catalog.updatePrice('m-kopi', 60);
+      catalog.updatePrice('cl-americano', 60);
       await settle();
 
       // The point of the whole exercise: the operator can find out.
       final WriteFailure? failure = catalog.consumeFailure();
       expect(failure, isNotNull);
-      expect(failure!.operation, contains('Kopi Filipino'));
+      expect(failure!.operation, contains('Americano'));
 
       // One-shot, so a toast does not reappear on the next rebuild.
       expect(catalog.consumeFailure(), isNull);

@@ -9,8 +9,10 @@ import '../models/staff.dart';
 /// Seed data used before Firebase is wired up, and as the reference fixture
 /// for the real Highlanders menu.
 ///
-/// TODO(owner): replace with the café's actual menu, prices and product photos
-/// once Firebase is connected. Prices are in PHP.
+/// Menu, categories and prices now come from the café's own order database
+/// (categories table + menu_items table). Product photos are still pending:
+/// items render with a placeholder image until the owner provides real photos,
+/// which can be set per item in Firestore without a rebuild.
 class MockData {
   const MockData._();
 
@@ -36,231 +38,105 @@ class MockData {
     rewards: 0,
   );
 
+  // The café's ten categories, in menu order. The database supplies the names
+  // only; the sort order follows the file and the icons are the closest
+  // monochrome Material glyph per category.
   static const List<MenuCategory> categories = <MenuCategory>[
-    MenuCategory(id: 'coffee', label: 'Coffee', sortOrder: 0, icon: Icons.coffee_outlined),
-    MenuCategory(id: 'brews', label: 'Brews', sortOrder: 1, icon: Icons.emoji_food_beverage_outlined),
-    MenuCategory(id: 'noncoffee', label: 'Non-Coffee', sortOrder: 2, icon: Icons.local_drink_outlined),
-    MenuCategory(id: 'pastries', label: 'Pastries', sortOrder: 3, icon: Icons.bakery_dining_outlined),
-    MenuCategory(id: 'meals', label: 'Meals', sortOrder: 4, icon: Icons.restaurant_outlined),
+    MenuCategory(id: 'pizza', label: 'Pizza', sortOrder: 0, icon: Icons.local_pizza_outlined),
+    MenuCategory(id: 'appetizers', label: 'Appetizers', sortOrder: 1, icon: Icons.ramen_dining_outlined),
+    MenuCategory(id: 'wings', label: 'Chicken Wings', sortOrder: 2, icon: Icons.set_meal_outlined),
+    MenuCategory(id: 'burgers', label: 'Burgers', sortOrder: 3, icon: Icons.lunch_dining_outlined),
+    MenuCategory(id: 'sandwiches', label: 'Sandwiches', sortOrder: 4, icon: Icons.dinner_dining_outlined),
+    MenuCategory(id: 'breakfast', label: 'All-day Breakfast', sortOrder: 5, icon: Icons.breakfast_dining_outlined),
+    MenuCategory(id: 'pastas', label: 'Pastas', sortOrder: 6, icon: Icons.soup_kitchen_outlined),
+    MenuCategory(id: 'classics', label: 'Classics (Espresso Based)', sortOrder: 7, icon: Icons.local_cafe_outlined),
+    MenuCategory(id: 'noncoffee', label: 'Non-Coffee', sortOrder: 8, icon: Icons.local_drink_outlined),
+    MenuCategory(id: 'frappes', label: 'Frappes', sortOrder: 9, icon: Icons.icecream_outlined),
   ];
 
+  // The café's real menu: 57 items from their database. Names, categories and
+  // prices are copied exactly; the database stores drinks as `price_hot` /
+  // `price_cold`, and since a menu item carries one price the hot price is used
+  // (identical for the five drinks where hot == cold). No descriptions or
+  // photos exist in the source, so both are left for the admin panel to fill
+  // in, and stock is a flat default because the database tracks none.
   static const List<MenuItem> menu = <MenuItem>[
-    MenuItem(
-      id: 'm-kopi',
-      stock: 120,
-      categoryId: 'coffee',
-      name: 'Kopi Filipino',
-      price: 55,
-      description: 'The everyday local classic. Dark roast, evaporated milk, '
-          'served hot or over ice. Strong, smooth and unapologetically Filipino.',
-      isBestseller: true,
-      prepMinutes: 4,
-      sortOrder: 0,
-    ),
-    MenuItem(
-      id: 'm-americano',
-      stock: 64,
-      categoryId: 'coffee',
-      name: 'Americano',
-      price: 90,
-      description: 'Double espresso lengthened with hot water. Clean, balanced '
-          'and lets the beans speak for themselves.',
-      prepMinutes: 4,
-      sortOrder: 1,
-    ),
-    MenuItem(
-      id: 'm-latte',
-      stock: 48,
-      categoryId: 'coffee',
-      name: 'Caffè Latte',
-      price: 120,
-      description: 'Silky steamed milk with a double shot poured through a '
-          'fine microfoam. Soft and creamy with a light brown finish.',
-      isBestseller: true,
-      prepMinutes: 5,
-      sortOrder: 2,
-    ),
-    MenuItem(
-      id: 'm-cappuccino',
-      stock: 32,
-      categoryId: 'coffee',
-      name: 'Cappuccino',
-      price: 120,
-      description: 'Equal parts espresso, steamed milk and dense foam. '
-          'Finished with a dusting of cocoa.',
-      prepMinutes: 5,
-      sortOrder: 3,
-    ),
-    MenuItem(
-      id: 'm-mocha',
-      stock: 9,
-      categoryId: 'coffee',
-      name: 'Mocha',
-      price: 135,
-      description: 'Espresso and single-origin chocolate, lifted with steamed '
-          'milk. Rich and dessert-adjacent.',
-      prepMinutes: 6,
-      sortOrder: 4,
-    ),
-    MenuItem(
-      id: 'm-espresso',
-      stock: 80,
-      categoryId: 'coffee',
-      name: 'Espresso',
-      price: 75,
-      description: 'A single concentrated shot with a deep amber crema. '
-          'Order a doppio if you need more.',
-      prepMinutes: 3,
-      sortOrder: 5,
-    ),
-    MenuItem(
-      id: 'm-colds',
-      stock: 26,
-      categoryId: 'brews',
-      name: 'Cold Brew',
-      price: 130,
-      description: 'Steeped for 18 hours at low temperature. Smooth, '
-          'low-acid and naturally sweet with no sugar added.',
-      isBestseller: true,
-      prepMinutes: 3,
-      sortOrder: 0,
-    ),
-    MenuItem(
-      id: 'm-icedlatte',
-      stock: 40,
-      categoryId: 'brews',
-      name: 'Iced Latte',
-      price: 125,
-      description: 'Double shot poured over ice and cold milk. '
-          'The reliable afternoon order.',
-      isBestseller: true,
-      prepMinutes: 4,
-      sortOrder: 1,
-    ),
-    MenuItem(
-      id: 'm-mochafrappe',
-      stock: 4,
-      categoryId: 'brews',
-      name: 'Mocha Frappe',
-      price: 150,
-      description: 'Blended espresso, chocolate and milk with whipped cream. '
-          'Thick, cold and properly sweet.',
-      prepMinutes: 6,
-      sortOrder: 2,
-    ),
-    MenuItem(
-      id: 'm-matcha',
-      stock: 18,
-      categoryId: 'noncoffee',
-      name: 'Matcha Latte',
-      price: 135,
-      description: 'Ceremonial-grade matcha whisked with steamed milk. '
-          'Grassy, calm and faintly sweet.',
-      prepMinutes: 5,
-      sortOrder: 0,
-    ),
-    MenuItem(
-      id: 'm-choco',
-      stock: 0,
-      categoryId: 'noncoffee',
-      name: 'Choco Latte',
-      price: 125,
-      description: 'Dark chocolate and steamed milk. Caffeine-light and '
-          'comforting, served hot or iced.',
-      prepMinutes: 5,
-      sortOrder: 1,
-    ),
-    MenuItem(
-      id: 'm-tea',
-      stock: 55,
-      categoryId: 'noncoffee',
-      name: 'Fresh Brewed Tea',
-      price: 60,
-      description: 'Loose-leaf black tea brewed to order. Ask for lemon, '
-          'or enjoy it plain.',
-      isAvailable: true,
-      prepMinutes: 3,
-      sortOrder: 2,
-    ),
-    MenuItem(
-      id: 'm-croissant',
-      stock: 30,
-      categoryId: 'pastries',
-      name: 'Butter Croissant',
-      price: 85,
-      description: 'Laminated 27 times for shatteringly crisp layers, '
-          'baked fresh each morning.',
-      isBestseller: true,
-      prepMinutes: 2,
-      sortOrder: 0,
-    ),
-    MenuItem(
-      id: 'm-ensaymada',
-      stock: 22,
-      categoryId: 'pastries',
-      name: 'Ensaymada',
-      price: 75,
-      description: 'Soft sweet bread crowned with butter, sugar and salted egg. '
-          'A proper Pinoy classic.',
-      prepMinutes: 2,
-      sortOrder: 1,
-    ),
-    MenuItem(
-      id: 'm-empanada',
-      stock: 6,
-      categoryId: 'pastries',
-      name: 'Beef Empanada',
-      price: 65,
-      description: 'Flaky pastry packed with spiced beef and vegetables, '
-          'baked to order.',
-      prepMinutes: 6,
-      sortOrder: 2,
-    ),
-    MenuItem(
-      id: 'm-chocobread',
-      stock: 38,
-      categoryId: 'pastries',
-      name: 'Choco Bread',
-      price: 55,
-      description: 'Soft milk bread rolled in chocolate sprinkles. '
-          'Best with a fresh cup.',
-      prepMinutes: 1,
-      sortOrder: 3,
-    ),
-    MenuItem(
-      id: 'm-sandwich',
-      stock: 14,
-      categoryId: 'meals',
-      name: 'Ham & Cheese Panini',
-      price: 165,
-      description: 'Griddled ham and cheese with herbs on toasted sourdough. '
-          'Served with a pickle spear.',
-      prepMinutes: 8,
-      sortOrder: 0,
-    ),
-    MenuItem(
-      id: 'm-pasta',
-      stock: 9,
-      categoryId: 'meals',
-      name: 'Creamy Carbonara',
-      price: 195,
-      description: 'Spaghetti with bacon, egg and Parmesan in a cream sauce. '
-          'Black pepper, no shortcuts.',
-      isBestseller: true,
-      prepMinutes: 12,
-      sortOrder: 1,
-    ),
-    MenuItem(
-      id: 'm-tray',
-      stock: 16,
-      categoryId: 'meals',
-      name: 'Highlanders Breakfast Tray',
-      price: 245,
-      description: 'Two eggs any style, garlic rice, fried sausage and a '
-          'cup of freshly brewed coffee. Served 7am to 11am.',
-      prepMinutes: 14,
-      sortOrder: 2,
-    ),
+    // --- Pizza --------------------------------------------------------------
+    MenuItem(id: 'pz-hawaiian', categoryId: 'pizza', name: 'Hawaiian', price: 349, stock: 50, sortOrder: 0),
+    MenuItem(id: 'pz-pepperoni', categoryId: 'pizza', name: 'Pepperoni', price: 349, stock: 50, sortOrder: 1),
+    MenuItem(id: 'pz-truffle-mushroom', categoryId: 'pizza', name: 'Truffle Mushroom Bianca', price: 399, stock: 50, sortOrder: 2),
+    MenuItem(id: 'pz-chicken-barbecue', categoryId: 'pizza', name: 'Chicken Barbecue', price: 429, stock: 50, sortOrder: 3),
+    MenuItem(id: 'pz-all-cheese', categoryId: 'pizza', name: 'All Cheese', price: 399, stock: 50, sortOrder: 4),
+    MenuItem(id: 'pz-spinach-cheese', categoryId: 'pizza', name: 'Spinach Cheese', price: 399, stock: 50, sortOrder: 5),
+    MenuItem(id: 'pz-overload', categoryId: 'pizza', name: 'Overload', price: 449, stock: 50, sortOrder: 6),
+
+    // --- Appetizers ---------------------------------------------------------
+    MenuItem(id: 'ap-nachos', categoryId: 'appetizers', name: 'Nachos', price: 319, stock: 50, sortOrder: 0),
+    MenuItem(id: 'ap-french-toast', categoryId: 'appetizers', name: 'Highlanders French Toast', price: 329, stock: 50, sortOrder: 1),
+    MenuItem(id: 'ap-caesar-salad', categoryId: 'appetizers', name: 'Chicken Caesar Salad', price: 349, stock: 50, sortOrder: 2),
+    MenuItem(id: 'ap-house-salad', categoryId: 'appetizers', name: 'Highlanders House Salad', price: 289, stock: 50, sortOrder: 3),
+    MenuItem(id: 'ap-poppers-fries', categoryId: 'appetizers', name: 'Chicken Poppers & Fries', price: 249, stock: 50, sortOrder: 4),
+    MenuItem(id: 'ap-nutella-waffle', categoryId: 'appetizers', name: 'Nutella Banana Waffle', price: 239, stock: 50, sortOrder: 5),
+
+    // --- Chicken Wings ------------------------------------------------------
+    MenuItem(id: 'wn-garlic-ranch', categoryId: 'wings', name: 'Garlic Ranch', price: 299, stock: 50, sortOrder: 0),
+    MenuItem(id: 'wn-garlic-parmesan', categoryId: 'wings', name: 'Garlic Parmesan', price: 279, stock: 50, sortOrder: 1),
+    MenuItem(id: 'wn-sweet-soy-garlic', categoryId: 'wings', name: 'Sweet Soy Garlic', price: 249, stock: 50, sortOrder: 2),
+    MenuItem(id: 'wn-bbq-hot-honey', categoryId: 'wings', name: 'BBQ Hot Honey', price: 359, stock: 50, sortOrder: 3),
+
+    // --- Burgers ------------------------------------------------------------
+    MenuItem(id: 'bg-classic', categoryId: 'burgers', name: 'Classic Burger', price: 299, stock: 50, sortOrder: 0),
+    MenuItem(id: 'bg-onion-bacon', categoryId: 'burgers', name: 'Onion & Bacon', price: 329, stock: 50, sortOrder: 1),
+    MenuItem(id: 'bg-mushroom', categoryId: 'burgers', name: 'Mushroom Burger', price: 369, stock: 50, sortOrder: 2),
+    MenuItem(id: 'bg-crispy-chicken', categoryId: 'burgers', name: 'Crispy Chicken Burger', price: 329, stock: 50, sortOrder: 3),
+
+    // --- Sandwiches ---------------------------------------------------------
+    MenuItem(id: 'sw-chicken-fajitas', categoryId: 'sandwiches', name: 'Chicken Fajitas', price: 349, stock: 50, sortOrder: 0),
+    MenuItem(id: 'sw-club', categoryId: 'sandwiches', name: 'Chicken Club Sandwich', price: 329, stock: 50, sortOrder: 1),
+    MenuItem(id: 'sw-ham-cheese', categoryId: 'sandwiches', name: 'Ham & Cheese', price: 199, stock: 50, sortOrder: 2),
+    MenuItem(id: 'sw-tuna-melt', categoryId: 'sandwiches', name: 'Tuna Melt Sandwich', price: 239, stock: 50, sortOrder: 3),
+
+    // --- All-day Breakfast --------------------------------------------------
+    MenuItem(id: 'bf-hickory-ribs', categoryId: 'breakfast', name: 'Hickory Baby Back Ribs', price: 469, stock: 50, sortOrder: 0),
+    MenuItem(id: 'bf-beef-tapa', categoryId: 'breakfast', name: 'Beef Tapa', price: 389, stock: 50, sortOrder: 1),
+    MenuItem(id: 'bf-daing-bangus', categoryId: 'breakfast', name: 'Daing na Bangus', price: 379, stock: 50, sortOrder: 2),
+    MenuItem(id: 'bf-ultimate-filipino', categoryId: 'breakfast', name: 'Ultimate Filipino Breakfast', price: 439, stock: 50, sortOrder: 3),
+    MenuItem(id: 'bf-american', categoryId: 'breakfast', name: 'American Breakfast', price: 439, stock: 50, sortOrder: 4),
+    MenuItem(id: 'bf-continental', categoryId: 'breakfast', name: 'Continental Breakfast', price: 439, stock: 50, sortOrder: 5),
+    MenuItem(id: 'bf-chicken-gravy', categoryId: 'breakfast', name: 'Chicken Mushroom Gravy', price: 299, stock: 50, sortOrder: 6),
+
+    // --- Pastas -------------------------------------------------------------
+    MenuItem(id: 'ps-chicken-alfredo', categoryId: 'pastas', name: 'Chicken Alfredo', price: 349, stock: 50, sortOrder: 0),
+    MenuItem(id: 'ps-carbonara', categoryId: 'pastas', name: 'Carbonara', price: 319, stock: 50, sortOrder: 1),
+    MenuItem(id: 'ps-bolognese', categoryId: 'pastas', name: 'Spaghetti Bolognese', price: 289, stock: 50, sortOrder: 2),
+    MenuItem(id: 'ps-pomodoro', categoryId: 'pastas', name: 'Pomodoro Pasta', price: 229, stock: 50, sortOrder: 3),
+    MenuItem(id: 'ps-meatballs', categoryId: 'pastas', name: 'Spaghetti Meatballs', price: 329, stock: 50, sortOrder: 4),
+    MenuItem(id: 'ps-parmigiana', categoryId: 'pastas', name: 'Chicken Parmigiana', price: 389, stock: 50, sortOrder: 5),
+
+    // --- Classics (Espresso Based) ------------------------------------------
+    MenuItem(id: 'cl-americano', categoryId: 'classics', name: 'Americano', price: 129, stock: 50, sortOrder: 0),
+    MenuItem(id: 'cl-cappuccino', categoryId: 'classics', name: 'Cappuccino', price: 139, stock: 50, sortOrder: 1),
+    MenuItem(id: 'cl-cafe-latte', categoryId: 'classics', name: 'Cafe Latte', price: 139, stock: 50, sortOrder: 2),
+    MenuItem(id: 'cl-cafe-mocha', categoryId: 'classics', name: 'Cafe Mocha', price: 169, stock: 50, sortOrder: 3),
+    MenuItem(id: 'cl-caramel-macchiato', categoryId: 'classics', name: 'Caramel Macchiato', price: 169, stock: 50, sortOrder: 4),
+    MenuItem(id: 'cl-spanish-latte', categoryId: 'classics', name: 'Spanish Latte', price: 149, stock: 50, sortOrder: 5),
+    MenuItem(id: 'cl-strawberry-espresso', categoryId: 'classics', name: 'Strawberry Espresso', price: 159, stock: 50, sortOrder: 6),
+    MenuItem(id: 'cl-dirty-matcha', categoryId: 'classics', name: 'Dirty Matcha', price: 189, stock: 50, sortOrder: 7),
+
+    // --- Non-Coffee ---------------------------------------------------------
+    MenuItem(id: 'nc-double-chocolate', categoryId: 'noncoffee', name: 'Double Chocolate', price: 159, stock: 50, sortOrder: 0),
+    MenuItem(id: 'nc-matcha-latte', categoryId: 'noncoffee', name: 'Matcha Latte', price: 169, stock: 50, sortOrder: 1),
+    MenuItem(id: 'nc-mixed-berries', categoryId: 'noncoffee', name: 'Mixed Berries Latte', price: 179, stock: 50, sortOrder: 2),
+    MenuItem(id: 'nc-strawberry-latte', categoryId: 'noncoffee', name: 'Strawberry Latte', price: 169, stock: 50, sortOrder: 3),
+    MenuItem(id: 'nc-strawberry-matcha', categoryId: 'noncoffee', name: 'Strawberry Matcha', price: 189, stock: 50, sortOrder: 4),
+
+    // --- Frappes ------------------------------------------------------------
+    MenuItem(id: 'fr-white-choco-mocha', categoryId: 'frappes', name: 'White Choco Mocha Frappe', price: 199, stock: 50, sortOrder: 0),
+    MenuItem(id: 'fr-java-chips', categoryId: 'frappes', name: 'Java Chips Frappucino', price: 199, stock: 50, sortOrder: 1),
+    MenuItem(id: 'fr-coffee-caramel', categoryId: 'frappes', name: 'Coffee Caramel Frappe', price: 199, stock: 50, sortOrder: 2),
+    MenuItem(id: 'fr-strawberry', categoryId: 'frappes', name: 'Strawberry Frappe', price: 179, stock: 50, sortOrder: 3),
+    MenuItem(id: 'fr-matcha', categoryId: 'frappes', name: 'Matcha Frappe', price: 199, stock: 50, sortOrder: 4),
+    MenuItem(id: 'fr-ube-macapuno', categoryId: 'frappes', name: 'Ube Macapuno Frappe', price: 179, stock: 50, sortOrder: 5),
   ];
 
   static const List<Promo> promos = <Promo>[

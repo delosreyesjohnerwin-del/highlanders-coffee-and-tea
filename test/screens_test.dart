@@ -171,14 +171,14 @@ void main() {
       // the product list, below the category pills.
       expect(search, greaterThan(categories));
 
-      await tester.enterText(find.byType(TextField).first, 'kopi');
+      await tester.enterText(find.byType(TextField).first, 'daing');
       await tester.pumpAndSettle();
 
       // Searching hides the carousel block, which unmounts it and cancels the
       // timer — no animation against a disposed controller.
       expect(find.byType(PromoCarousel), findsNothing);
       expect(find.text('Search results'), findsOneWidget);
-      expect(find.text('Kopi Filipino'), findsOneWidget);
+      expect(find.text('Daing na Bangus'), findsOneWidget);
     });
 
     testWidgets('orders, active tab', (WidgetTester tester) async {
@@ -234,16 +234,20 @@ void main() {
       // The menu list sits below the hero, categories and offers.
       await revealByDragging(
         tester,
-        find.text('Kopi Filipino'),
+        find.text('Hawaiian'),
         find.byType(CustomScrollView),
       );
 
-      await tester.tap(find.text('Kopi Filipino'));
+      await tester.tap(find.text('Hawaiian'));
       await tester.pumpAndSettle();
 
       expect(find.byType(MenuItemDetailScreen), findsOneWidget);
-      expect(find.text('Choose a size'), findsOneWidget);
-      expect(find.text('Regular'), findsOneWidget);
+      // The invented "Regular / Large +₱15" selector was removed when the real
+      // menu (one price per item) went in — its UI must not come back.
+      expect(find.text('Choose a size'), findsNothing);
+      expect(find.text('Regular'), findsNothing);
+      // The single real price is shown (header and the sticky add-bar total).
+      expect(find.textContaining('₱349'), findsWidgets);
 
       await scrollToEnd(tester, find.byType(ListView).first);
     });
@@ -258,14 +262,14 @@ void main() {
 
       await revealByDragging(
         tester,
-        find.text('Kopi Filipino'),
+        find.text('Hawaiian'),
         find.byType(CustomScrollView),
       );
 
       // Target the stepper inside one specific card rather than "the first
       // plus on screen", which depends on layout and build order.
       final Finder kopiPlus = find.descendant(
-        of: find.ancestor(of: find.text('Kopi Filipino'), matching: find.byType(MenuItemCard)),
+        of: find.ancestor(of: find.text('Hawaiian'), matching: find.byType(MenuItemCard)),
         matching: find.byIcon(Icons.add_rounded),
       );
 
@@ -405,11 +409,11 @@ void main() {
       expect(find.text('STOCK'), findsOneWidget);
       expect(find.text('STATUS'), findsOneWidget);
 
-      // Seeded fixtures deliberately include healthy, low and sold-out items so
-      // all three status badges are exercised.
+      // The real menu ships fully stocked (50 of everything): the database the
+      // menu came from tracks no stock levels, so every status shows "In Stock".
+      // The low/out-of-stock badge derivations stay covered by the model-level
+      // tests in auth_test.dart (StockStatus), which seed their own fixtures.
       expect(find.text('In Stock'), findsWidgets);
-      expect(find.text('Low Stock'), findsWidgets);
-      expect(find.text('Out of Stock'), findsWidgets);
 
       // The FAB opens the add form.
       expect(find.byType(BwFab), findsOneWidget);
@@ -430,7 +434,7 @@ void main() {
 
       // Tap a specific row, not the table's centre: the table scrolls
       // horizontally, so its midpoint can sit past the viewport edge.
-      final Finder firstRow = find.text('Kopi Filipino');
+      final Finder firstRow = find.text('Hawaiian');
       await revealByDragging(tester, firstRow, find.byType(Scrollable).last);
       await tester.tap(firstRow);
       await tester.pumpAndSettle();
@@ -439,7 +443,7 @@ void main() {
       // Pre-filled from the tapped row rather than blank.
       expect(
         tester.widget<TextFormField>(
-          find.widgetWithText(TextFormField, 'Kopi Filipino'),
+          find.widgetWithText(TextFormField, 'Hawaiian'),
         ),
         isNotNull,
       );
