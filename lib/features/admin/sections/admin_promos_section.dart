@@ -463,6 +463,21 @@ class _PromoFormSheetState extends State<_PromoFormSheet> {
     return 'PROMO${stamp.toString().substring(stamp.toString().length - 6)}';
   }
 
+  /// Whether [code] is already a promotion's document id.
+  ///
+  /// Reads the provider rather than taking a set of codes as a constructor
+  /// argument, so a promotion added in another session, or by the seed, is caught
+  /// too.
+  ///
+  /// [codesInUse] is read during `build` and passed in, rather than watching the
+  /// provider here. A `FormField` validator runs from `FormState.validate`, which
+  /// happens inside the submit button's event handler -- outside a build -- and
+  /// provider refuses to listen there. Watching in `build` and closing over the
+  /// result has the same effect: a catalog change rebuilds the sheet, which
+  /// rebuilds the validator with the new codes.
+  static bool _codeInUse(String code, Set<String> codesInUse, Promo? existing) =>
+      codesInUse.contains(code) && code != existing?.code;
+
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
@@ -482,6 +497,15 @@ class _PromoFormSheetState extends State<_PromoFormSheet> {
   @override
   Widget build(BuildContext context) {
     final bool editing = widget.existing != null;
+
+    // Read once per build and closed over by the validator below, so the check
+    // stays current without the validator touching the provider. See
+    // [_codeInUse] for why it cannot be a `watch` inside the validator.
+    final Set<String> codesInUse = context
+        .watch<CatalogProvider>()
+        .allPromos
+        .map((Promo p) => p.code)
+        .toSet();
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -524,11 +548,24 @@ class _PromoFormSheetState extends State<_PromoFormSheet> {
                         helperMaxLines: 2,
                       ),
                       validator: (String? v) {
-                        final String value = (v ?? '').trim();
+                        final String value = (v ?? '').trim().toUpperCase();
                         if (value.isEmpty) return 'Enter a code.';
-                        if (!_codeLocked &&
-                            value != value.toUpperCase()) {
+                        if (!_codeLocked && value != value.toUpperCase()) {
                           return 'Use capitals only.';
+                        }
+                        // A duplicate code is not a validation nicety, it is data
+                        // loss. `upsertPromo` keys on the code, so saving over a
+                        // code that is already in use replaces that promotion's
+                        // headline and offer with whatever was just typed -- with no
+                        // second document, no warning, and no way back. The helper
+                        // text says "unique"; this is where that is enforced.
+                        //
+                        // Comparing against the sheet's own promo is why the check
+                        // lives here rather than in the provider: editing a promo
+                        // and saving it unchanged must not fail against itself.
+                        if (!_codeLocked &&
+                            _codeInUse(value, codesInUse, widget.existing)) {
+                          return '"$value" is already in use.';
                         }
                         return null;
                       },

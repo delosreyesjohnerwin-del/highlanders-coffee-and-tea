@@ -650,6 +650,46 @@ void main() {
       expect(find.text('All (${before + 1})'), findsOneWidget);
     });
 
+    testWidgets('a promo code already in use is refused',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.promos,
+      ));
+
+      final String taken = MockData.promos.first.code;
+      final int before = MockData.promos.length;
+
+      await tester.tap(find.byType(BwFab));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byWidgetPredicate((Widget w) => w is TextFormField && w.controller?.text.startsWith('PROMO') == true),
+        taken,
+      );
+      await tester.pumpAndSettle();
+
+      // Saving over a live code would replace that promotion's headline and offer
+      // with whatever was just typed, under the same document id, with no warning
+      // and no way back. This is the check that stops it.
+      expect(find.text('"$taken" is already in use.'), findsOneWidget);
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Headline'),
+        'Impostor',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Add promotion'));
+      await tester.pumpAndSettle();
+
+      // The sheet refused to close, so nothing was written. Asserted on the counts
+      // rather than on the typed text, which is still in the open field and would
+      // pass for the wrong reason.
+      expect(find.text('Add promotion'), findsWidgets, reason: 'the sheet stayed open');
+      expect(find.text('Live ($before)'), findsOneWidget, reason: 'no promo was added');
+      expect(find.text('All ($before)'), findsOneWidget);
+    });
+
     testWidgets('promo delete asks first, then removes the card',
         (WidgetTester tester) async {
       await usePhone(tester);
