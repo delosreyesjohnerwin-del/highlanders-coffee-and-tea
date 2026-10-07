@@ -147,22 +147,24 @@ void main() {
 
   group('distance maths', () {
     test('a legacy address (no pin) uses its barangay centroid', () {
-      const SavedAddress legacy = SavedAddress(
+      // A code the bundled table must still resolve; the centroid then drives
+      // the fallback distance.
+      final Barangay centro = LumbanCoverage.byCode('lumban-santo-nino')!;
+      final SavedAddress legacy = SavedAddress(
         id: 'a',
         label: 'Home',
-        street: '123 Poblacion Road',
-        barangayCode: 'lumban-poblacion',
+        street: '123 Church St',
+        barangayCode: centro.code,
       );
 
       final double? km = legacy.distanceKm();
 
-      const Barangay poblacion = Barangay(code: 'lumban-poblacion', name: 'Poblacion', lat: 14.2919, lng: 121.4644);
       expect(km, isNotNull);
       expect(km, closeTo(haversineKm(
         lat1: LumbanCoverage.cafeLat,
         lng1: LumbanCoverage.cafeLng,
-        lat2: poblacion.lat,
-        lng2: poblacion.lng,
+        lat2: centro.lat,
+        lng2: centro.lng,
       ), 1e-9));
     });
 
@@ -171,13 +173,13 @@ void main() {
         id: 'a',
         label: 'Home',
         street: '1 Mug St',
-        barangayCode: 'lumban-marawoy',
+        barangayCode: 'lumban-wawa',
         lat: LumbanCoverage.cafeLat,
         lng: LumbanCoverage.cafeLng,
       );
 
-      // The barangay says Marawoy (several hundred metres away), but the pin
-      // wins — the fee must be for where the rider is actually going.
+      // The barangay says Wawa (a couple of km away), but the pin wins — the
+      // fee must be for where the rider is actually going.
       expect(atCafe.distanceKm(), closeTo(0, 1e-6));
     });
 
@@ -219,7 +221,7 @@ void main() {
         id: 'a-home',
         label: 'Home',
         street: '100 New Road',
-        barangayCode: 'lumban-santol',
+        barangayCode: 'lumban-concepcion',
       ));
 
       expect(session.addresses, hasLength(2));
@@ -233,7 +235,7 @@ void main() {
         id: 'a-condo',
         label: 'Condo',
         street: '5 Torre St',
-        barangayCode: 'lumban-santol',
+        barangayCode: 'lumban-concepcion',
         isDefault: true,
       ));
 
@@ -250,7 +252,7 @@ void main() {
         id: 'a-home',
         label: 'Home',
         street: '5 Torre St',
-        barangayCode: 'lumban-santol',
+        barangayCode: 'lumban-concepcion',
         isDefault: false,
       ));
 

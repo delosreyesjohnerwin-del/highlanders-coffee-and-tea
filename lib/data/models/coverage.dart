@@ -106,8 +106,8 @@ class DeliveryPricing {
 
 /// Café location and the bundled Lumban coverage table.
 ///
-/// TODO(owner): confirm the barangay centroids below before shipping — fees
-/// and ETAs depend on them. The café pin itself is the confirmed origin.
+/// Barangay centroids are the PhilAtlas/PSGC points for the official 16
+/// barangays of Lumban (the old table listed names Lumban does not have).
 class LumbanCoverage {
   const LumbanCoverage._();
 
@@ -125,27 +125,26 @@ class LumbanCoverage {
         lng2: b.lng,
       );
 
-  /// Bundled barangay table. Coordinates are centroids and should be
-  /// replaced with authoritative values from the municipality.
+  /// The official 16 barangays of Lumban, Laguna (PSA PSGC), with centroid
+  /// coordinates from PhilAtlas. Delivery fees fall back to these when a
+  /// saved address has no GPS pin yet.
   static const List<Barangay> barangays = <Barangay>[
-    Barangay(code: 'lumban-poblacion', name: 'Poblacion', lat: 14.2919, lng: 121.4644),
-    Barangay(code: 'lumban-santo-nino', name: 'Santo Niño', lat: 14.2880, lng: 121.4700),
-    Barangay(code: 'lumban-santol', name: 'Santol', lat: 14.2960, lng: 121.4560),
-    Barangay(code: 'lumban-mabini', name: 'Mabini', lat: 14.3020, lng: 121.4680),
-    Barangay(code: 'lumban-dalupa', name: 'Dalupa', lat: 14.2870, lng: 121.4520),
-    Barangay(code: 'lumban-marawoy', name: 'Marawoy', lat: 14.2955, lng: 121.4790),
-    Barangay(code: 'lumban-mabini-west', name: 'Mabini West', lat: 14.3080, lng: 121.4560),
-    Barangay(code: 'lumban-nayon', name: 'Nayon', lat: 14.2820, lng: 121.4650),
-    Barangay(code: 'lumban-langat', name: 'Langat', lat: 14.3100, lng: 121.4820),
-    Barangay(code: 'lumban-bagumbayan', name: 'Bagumbayan', lat: 14.2760, lng: 121.4710),
-    Barangay(code: 'lumban-banalo', name: 'Banalo', lat: 14.2900, lng: 121.4880),
-    Barangay(code: 'lumban-banzaan', name: 'Banzaan', lat: 14.3010, lng: 121.4930),
-    Barangay(code: 'lumban-halong', name: 'Halong', lat: 14.2790, lng: 121.4820),
-    Barangay(code: 'lumban-bukang', name: 'Bukang', lat: 14.2660, lng: 121.4590),
-    Barangay(code: 'lumban-dagatan', name: 'Dagatan', lat: 14.3130, lng: 121.4470),
-    Barangay(code: 'lumban-livesa', name: 'Livesa', lat: 14.2680, lng: 121.4900),
-    Barangay(code: 'lumban-malabao', name: 'Malabao', lat: 14.3060, lng: 121.4990),
-    Barangay(code: 'lumban-molina', name: 'Molina', lat: 14.2600, lng: 121.4700),
+    Barangay(code: 'lumban-bagong-silang', name: 'Bagong Silang', lat: 14.2928, lng: 121.4627),
+    Barangay(code: 'lumban-balimbingan', name: 'Balimbingan', lat: 14.3001, lng: 121.4597),
+    Barangay(code: 'lumban-balubad', name: 'Balubad', lat: 14.2888, lng: 121.4633),
+    Barangay(code: 'lumban-caliraya', name: 'Caliraya', lat: 14.2875, lng: 121.5007),
+    Barangay(code: 'lumban-concepcion', name: 'Concepcion', lat: 14.2988, lng: 121.4567),
+    Barangay(code: 'lumban-lewin', name: 'Lewin', lat: 14.3034, lng: 121.5082),
+    Barangay(code: 'lumban-maracta', name: 'Maracta', lat: 14.2987, lng: 121.4597),
+    Barangay(code: 'lumban-maytalang-i', name: 'Maytalang I', lat: 14.2893, lng: 121.4580),
+    Barangay(code: 'lumban-maytalang-ii', name: 'Maytalang II', lat: 14.2898, lng: 121.4453),
+    Barangay(code: 'lumban-primera-parang', name: 'Primera Parang', lat: 14.2920, lng: 121.4603),
+    Barangay(code: 'lumban-primera-pulo', name: 'Primera Pulo', lat: 14.3016, lng: 121.4596),
+    Barangay(code: 'lumban-salac', name: 'Salac', lat: 14.2955, lng: 121.4607),
+    Barangay(code: 'lumban-santo-nino', name: 'Santo Niño', lat: 14.2972, lng: 121.4599),
+    Barangay(code: 'lumban-segunda-parang', name: 'Segunda Parang', lat: 14.2943, lng: 121.4604),
+    Barangay(code: 'lumban-segunda-pulo', name: 'Segunda Pulo', lat: 14.3029, lng: 121.4596),
+    Barangay(code: 'lumban-wawa', name: 'Wawa', lat: 14.3055, lng: 121.4590),
   ];
 
   static Barangay? byCode(String code) {

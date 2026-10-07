@@ -270,7 +270,7 @@ void main() {
         'uid': 'u-marco',
         'label': 'Work',
         'street': '45 Dagatan Street',
-        'barangayCode': 'lumban-dagatan',
+        'barangayCode': 'lumban-wawa',
         'isDefault': false,
       }, 'wrong-id');
 

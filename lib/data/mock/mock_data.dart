@@ -168,14 +168,14 @@ class MockData {
       id: 'a-home',
       label: 'Home',
       street: '123 Poblacion Road',
-      barangayCode: 'lumban-poblacion',
+      barangayCode: 'lumban-santo-nino',
       isDefault: true,
     ),
     SavedAddress(
       id: 'a-work',
       label: 'Work',
       street: '45 Dagatan Street',
-      barangayCode: 'lumban-dagatan',
+      barangayCode: 'lumban-wawa',
     ),
   ];
 
@@ -200,8 +200,8 @@ class MockData {
         address: const AddressSnapshot(
           label: 'Home',
           street: '123 Poblacion Road',
-          barangayCode: 'lumban-poblacion',
-          barangayName: 'Poblacion',
+          barangayCode: 'lumban-santo-nino',
+          barangayName: 'Santo Niño',
           distanceKm: 1.2,
         ),
         pickupCode: '4820',
@@ -225,8 +225,8 @@ class MockData {
         address: const AddressSnapshot(
           label: 'Work',
           street: '45 Dagatan Street',
-          barangayCode: 'lumban-dagatan',
-          barangayName: 'Dagatan',
+          barangayCode: 'lumban-wawa',
+          barangayName: 'Wawa',
           distanceKm: 2.4,
         ),
         pickupCode: '5155',
@@ -248,8 +248,8 @@ class MockData {
         address: const AddressSnapshot(
           label: 'Home',
           street: '123 Poblacion Road',
-          barangayCode: 'lumban-poblacion',
-          barangayName: 'Poblacion',
+          barangayCode: 'lumban-santo-nino',
+          barangayName: 'Santo Niño',
           distanceKm: 0.9,
         ),
         pickupCode: '6372',
