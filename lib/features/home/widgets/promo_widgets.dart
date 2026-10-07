@@ -5,8 +5,8 @@ import '../../../core/theme/bw_metrics.dart';
 import '../../../core/widgets/bw_badge.dart';
 import '../../../data/models/menu.dart';
 
-/// High-contrast hero promo: solid black card, white bold text, promo tag and
-/// a solid white "Order Now" button with black text.
+/// High-contrast hero promo: brand-green-to-dark card, white bold text, promo
+/// tag and a solid white "Order Now" button with green text.
 class PromoHeroBanner extends StatelessWidget {
   const PromoHeroBanner({super.key, required this.promo, required this.onCta});
 

@@ -82,8 +82,8 @@ void main() {
     }
   });
 
-  test('palette is strictly monochrome', () {
-    // Every token must have r == g == b.
+  test('neutrals stay strictly monochrome', () {
+    // Every neutral token must have r == g == b.
     for (final Color c in <Color>[
       BwColors.bg,
       BwColors.subtle,
@@ -91,7 +91,6 @@ void main() {
       BwColors.borderStrong,
       BwColors.text,
       BwColors.textMuted,
-      BwColors.inverse,
       BwColors.onInverse,
     ]) {
       // Colour channel access via toARGB32(); the .r/.g/.b accessors are
@@ -104,5 +103,9 @@ void main() {
       expect(r, g, reason: 'red/green mismatch in $c');
       expect(g, b, reason: 'green/blue mismatch in $c');
     }
+  });
+
+  test('the accent is the Highlanders brand green', () {
+    expect(BwColors.inverse.toARGB32(), 0xFF363F2C, reason: 'accent must carry the logo green');
   });
 }

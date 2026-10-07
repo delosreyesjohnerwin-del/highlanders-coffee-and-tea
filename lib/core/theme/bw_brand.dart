@@ -22,9 +22,9 @@ class BwBrand {
 
   /// The mark in brand green, on a transparent ground.
   ///
-  /// Use this wherever it sits on white. Green on black measures roughly 1.9:1,
-  /// well under the 3:1 floor for non-text graphics, so never place it on an
-  /// [BwColors.inverse] surface.
+  /// Use this wherever it sits on white. Never place it on an
+  /// [BwColors.inverse] surface: since the accent is the same green, the
+  /// artwork would vanish into the background.
   static const String markAsset = 'assets/brand/highlanders_mark.png';
 
   /// The same silhouette knocked out to solid white.
@@ -35,9 +35,8 @@ class BwBrand {
   /// The brand green, `#363F2C`. Measured as the median of 79,872 deep-interior
   /// pixels in the source JPEG; contrast against white is about 11:1.
   ///
-  /// This is the colour of the artwork only. The UI palette in [BwColors] stays
-  /// strictly greyscale by design, and a test enforces that -- so this constant
-  /// is here to document the asset, not to invite brand hues into widgets.
+  /// [BwColors.inverse] — the app-wide accent — is this exact colour, so the
+  /// CTAs, active tabs and hero cards all carry the Highlanders mark's tone.
   static const Color green = Color(0xFF363F2C);
 
   /// Width divided by height of the mark, from the source crop (610 x 476).
