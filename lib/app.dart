@@ -80,13 +80,15 @@ class _HighlandersAppState extends State<HighlandersApp> {
         // The cart needs the catalog to resolve names, prices and the fee
         // schedule, and the session for saved addresses.
         //
-        // Note: `update` must read SessionProvider from its own callback
-        // context — the enclosing build context sits above the providers.
-        ChangeNotifierProxyProvider<CatalogProvider, CartProvider>(
+        // Listing SessionProvider as a dependency is what forces the sync: when
+        // an address is added, edited or deleted in the session, `update` re-runs
+        // and the cart's copy of the list follows. Without it, the cart would
+        // keep showing an address that was just deleted, or miss a brand-new one.
+        ChangeNotifierProxyProvider2<CatalogProvider, SessionProvider, CartProvider>(
           create: (BuildContext context) => CartProvider(context.read<CatalogProvider>()),
-          update: (BuildContext ctx, CatalogProvider catalog, CartProvider? cart) {
+          update: (BuildContext ctx, CatalogProvider catalog, SessionProvider session, CartProvider? cart) {
             final CartProvider next = cart ?? CartProvider(catalog);
-            next.setAddresses(ctx.read<SessionProvider>().addresses);
+            next.setAddresses(session.addresses);
             return next;
           },
         ),

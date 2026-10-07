@@ -58,6 +58,8 @@ class DeliveryPricing {
     this.tiers = defaultTiers,
     this.freeOver,
     this.coverableMaxKm = 10.0,
+    this.cafeLat = LumbanCoverage.cafeLat,
+    this.cafeLng = LumbanCoverage.cafeLng,
   });
 
   static const List<FeeTier> defaultTiers = <FeeTier>[
@@ -73,6 +75,13 @@ class DeliveryPricing {
 
   /// Beyond this distance Highlanders does not deliver.
   final double coverableMaxKm;
+
+  /// Coordinates the café quotes delivery distances from. Admin-editable via
+  /// [StoreSettings.cafeLat]/[StoreSettings.cafeLng] and carried on every
+  /// pricing snapshot so the cart computes fees from the same origin the admin
+  /// configured — defaulting to the bundled [LumbanCoverage] placeholder.
+  final double cafeLat;
+  final double cafeLng;
 
   final List<FeeTier> tiers;
 

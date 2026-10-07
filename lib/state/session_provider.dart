@@ -112,15 +112,42 @@ class SessionProvider extends ChangeNotifier {
     return _addresses.first;
   }
 
+  /// Adds a new address or replaces an existing one (upsert by id), so the
+  /// same method serves both the "add" and "edit" flows.
+  ///
+  /// Marking an address as default also clears the default flag on whatever
+  /// previously held it — two "default" deliveries would leave the shop
+  /// guessing which one to use. The unset is written through to the backend
+  /// just like the new value, so the persisted state matches what the user
+  /// sees.
   void addAddress(SavedAddress address) {
-    _addresses = <SavedAddress>[..._addresses, address];
+    SavedAddress? clearedDefault;
+    final List<SavedAddress> next = <SavedAddress>[];
+    bool replaced = false;
+
+    for (final SavedAddress a in _addresses) {
+      if (a.id == address.id) {
+        next.add(address);
+        replaced = true;
+      } else if (a.isDefault && address.isDefault) {
+        final SavedAddress cleared = a.copyWith(isDefault: false);
+        next.add(cleared);
+        clearedDefault = cleared;
+      } else {
+        next.add(a);
+      }
+    }
+    if (!replaced) next.add(address);
+
+    _addresses = next;
     notifyListeners();
 
     final ShopRepository? repo = _repository;
     if (repo == null) return;
-    unawaited(
-      repo.saveAddress(_user.uid, address).then(_recordFailure),
-    );
+    unawaited(repo.saveAddress(_user.uid, address).then(_recordFailure));
+    if (clearedDefault != null) {
+      unawaited(repo.saveAddress(_user.uid, clearedDefault).then(_recordFailure));
+    }
   }
 
   void removeAddress(String id) {

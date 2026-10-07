@@ -211,6 +211,30 @@ class _AdminSettingsSectionState extends State<AdminSettingsSection> {
                   ],
                 ),
                 const SizedBox(height: BwSpacing.md),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _NumberField(
+                        key: const ValueKey<String>('admin-cafe-lat'),
+                        label: 'Café latitude',
+                        value: s.cafeLat,
+                        decimals: 4,
+                        onChanged: (num v) => _update((StoreSettings s) => s.copyWith(cafeLat: v.toDouble())),
+                      ),
+                    ),
+                    const SizedBox(width: BwSpacing.sm),
+                    Expanded(
+                      child: _NumberField(
+                        key: const ValueKey<String>('admin-cafe-lng'),
+                        label: 'Café longitude',
+                        value: s.cafeLng,
+                        decimals: 4,
+                        onChanged: (num v) => _update((StoreSettings s) => s.copyWith(cafeLng: v.toDouble())),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BwSpacing.md),
                 _NumberField(
                   label: 'Coverage radius',
                   suffix: ' km',
@@ -221,8 +245,19 @@ class _AdminSettingsSectionState extends State<AdminSettingsSection> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Free delivery kicks in at ₱${s.freeOver}. Radius ${s.coverageRadiusKm} km '
-                    'from the café.',
+                    'Delivery fees are quoted from this location. Free delivery '
+                    'kicks in at ₱${s.freeOver}; the radius of '
+                    '${s.coverageRadiusKm} km is measured from the café.',
+                    style: const TextStyle(fontSize: 12, height: 1.4, color: BwColors.textMuted),
+                  ),
+                ),
+                const SizedBox(height: BwSpacing.sm),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Coordinates (${s.cafeLat.toStringAsFixed(4)}, ${s.cafeLng.toStringAsFixed(4)}) '
+                    'are the origin for real-GPS delivery distances. Confirm them '
+                    'once Maps is enabled in Phase 2.',
                     style: const TextStyle(fontSize: 12, height: 1.4, color: BwColors.textMuted),
                   ),
                 ),
@@ -440,11 +475,13 @@ class _LabeledFieldState extends State<_LabeledField> {
 /// Numeric variant, with an optional peso sign or unit suffix.
 class _NumberField extends StatefulWidget {
   const _NumberField({
+    super.key,
     required this.label,
     required this.value,
     required this.onChanged,
     this.prefix,
     this.suffix,
+    this.decimals,
   });
 
   final String label;
@@ -453,15 +490,22 @@ class _NumberField extends StatefulWidget {
   final String? prefix;
   final String? suffix;
 
+  /// Fixed number of decimal places to show initially. Coordinates need
+  /// roughly four; money and km are fine with the auto one-decimal default.
+  final int? decimals;
+
   @override
   State<_NumberField> createState() => _NumberFieldState();
 }
 
 class _NumberFieldState extends State<_NumberField> {
-  late final TextEditingController _c = TextEditingController(text: _format(widget.value));
+  late final TextEditingController _c = TextEditingController(text: _format(widget.value, widget.decimals));
 
-  static String _format(num v) =>
-      v is int ? '$v' : v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1);
+  static String _format(num v, int? decimals) {
+    if (v is int) return '$v';
+    if (decimals != null) return v.toStringAsFixed(decimals);
+    return v.toStringAsFixed(v.truncateToDouble() == v ? 0 : 1);
+  }
 
   @override
   void dispose() {

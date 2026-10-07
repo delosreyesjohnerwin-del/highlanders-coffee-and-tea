@@ -9,6 +9,7 @@ import 'package:highlanders_coffee/data/firestore/serialisation.dart';
 import 'package:highlanders_coffee/data/firestore/shop_repository.dart';
 import 'package:highlanders_coffee/data/firestore/stream_zip.dart';
 import 'package:highlanders_coffee/data/mock/mock_data.dart';
+import 'package:highlanders_coffee/data/models/coverage.dart';
 import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/data/models/settings.dart';
@@ -138,6 +139,8 @@ void main() {
           barangayCode: 'lumban-poblacion',
           barangayName: 'Poblacion',
           distanceKm: 1.2,
+          lat: 14.2919,
+          lng: 121.4644,
         ),
         pickupCode: '4820',
         driverName: 'Rodel',
@@ -162,6 +165,8 @@ void main() {
       expect(restored.total, 360);
       expect(restored.address?.barangayCode, 'lumban-poblacion');
       expect(restored.address?.distanceKm, 1.2);
+      expect(restored.address?.lat, 14.2919);
+      expect(restored.address?.lng, 121.4644);
       expect(restored.driverName, 'Rodel');
       expect(restored.promoCode, 'DAMPOTIST');
       // Timestamps go out as UTC and come back local. Comparing the instants
@@ -199,6 +204,8 @@ void main() {
         baseFee: 30,
         freeOver: 600,
         coverageRadiusKm: 8,
+        cafeLat: 14.1234,
+        cafeLng: 121.5678,
         opensAt: '6:00 AM',
         closesAt: '9:00 PM',
       );
@@ -209,10 +216,31 @@ void main() {
       expect(restored.baseFee, 30);
       expect(restored.freeOver, 600);
       expect(restored.coverageRadiusKm, 8);
+      // The GPS origin survives the round trip — it is what the delivery fee
+      // is measured from once pins exist.
+      expect(restored.cafeLat, 14.1234);
+      expect(restored.cafeLng, 121.5678);
       expect(restored.opensAt, '6:00 AM');
     });
 
-    test('a saved address keeps its barangay', () {
+    test('settings written before café coordinates existed fall back to the bundled origin', () {
+      final StoreSettings restored = StoreSettingsSerialisation.fromMap(<String, dynamic>{
+        'cafeName': 'Highlanders Coffee & Tea',
+        'isOpen': true,
+        'baseFee': 25,
+        'freeOver': 500,
+        'coverageRadiusKm': 10,
+        'opensAt': '7:00 AM',
+        'closesAt': '10:00 PM',
+      });
+
+      // The placeholder, not zero — zero would make every GPS distance read as
+      // the full radius and price the farthest barangay as the closest.
+      expect(restored.cafeLat, LumbanCoverage.cafeLat);
+      expect(restored.cafeLng, LumbanCoverage.cafeLng);
+    });
+
+    test('a saved address keeps its barangay and optional GPS pin', () {
       const SavedAddress original = SavedAddress(
         id: 'a1',
         label: 'Home',
@@ -220,6 +248,8 @@ void main() {
         barangayCode: 'lumban-poblacion',
         note: 'Blue gate',
         isDefault: true,
+        lat: 14.2919,
+        lng: 121.4644,
       );
 
       final SavedAddress restored =
@@ -228,8 +258,27 @@ void main() {
       expect(restored.id, 'a1');
       expect(restored.barangayCode, 'lumban-poblacion');
       expect(restored.isDefault, isTrue);
+      expect(restored.lat, 14.2919);
+      expect(restored.lng, 121.4644);
       // The uid rides along so the rules' `resource.data.uid` check can match.
       expect(original.toMap(uid: 'u-marco')['uid'], 'u-marco');
+    });
+
+    test('a saved address written before pins existed reads back without them', () {
+      final SavedAddress restored = SavedAddressSerialisation.fromMap(<String, dynamic>{
+        'id': 'a2',
+        'uid': 'u-marco',
+        'label': 'Work',
+        'street': '45 Dagatan Street',
+        'barangayCode': 'lumban-dagatan',
+        'isDefault': false,
+      }, 'wrong-id');
+
+      expect(restored.lat, isNull);
+      expect(restored.lng, isNull);
+      // And the missing pin must not break pricing: the barangay fallback is
+      // still reachable.
+      expect(restored.distanceKm(), isNotNull);
     });
   });
 

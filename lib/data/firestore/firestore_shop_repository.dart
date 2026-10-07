@@ -142,6 +142,8 @@ class FirestoreShopRepository implements ShopRepository {
             : DeliveryPricing(
                 freeOver: settings.freeOver == 0 ? null : settings.freeOver,
                 coverableMaxKm: settings.coverageRadiusKm,
+                cafeLat: settings.cafeLat,
+                cafeLng: settings.cafeLng,
               ),
       );
 

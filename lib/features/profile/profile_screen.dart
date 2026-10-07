@@ -9,6 +9,7 @@ import '../../core/widgets/bw_menu_row.dart';
 import '../../core/widgets/bw_stat.dart';
 import '../../data/models/order.dart';
 import '../../state/session_provider.dart';
+import '../address/saved_addresses_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
 
 /// Profile: solid black header card with avatar, name, email and a
@@ -49,7 +50,9 @@ class ProfileScreen extends StatelessWidget {
                       BwMenuRow(
                         icon: Icons.place_outlined,
                         label: 'Saved Addresses',
-                        onTap: () => _notReady(context, 'Saved Addresses'),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const SavedAddressesScreen()),
+                        ),
                       ),
                       BwMenuRow(
                         icon: Icons.account_balance_wallet_outlined,

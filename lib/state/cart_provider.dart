@@ -70,6 +70,12 @@ class CartProvider extends ChangeNotifier {
 
   void setAddresses(List<SavedAddress> addresses) {
     _mockAddresses = addresses;
+    // An address deleted while it was selected must not keep the cart thinking
+    // there is a delivery destination. The session pushes the shrunk list the
+    // moment the deletion lands, and this prune drops the stale selection.
+    if (_addressId != null && !addresses.any((SavedAddress a) => a.id == _addressId)) {
+      _addressId = null;
+    }
     notifyListeners();
   }
 
@@ -94,6 +100,7 @@ class CartProvider extends ChangeNotifier {
     final String? id = _addressId;
     if (id == null) return null;
 
+    final DeliveryPricing pricing = _catalog.pricing;
     for (final SavedAddress a in _mockAddresses) {
       if (a.id == id) {
         final Barangay? b = LumbanCoverage.byCode(a.barangayCode);
@@ -103,7 +110,9 @@ class CartProvider extends ChangeNotifier {
           barangayCode: a.barangayCode,
           barangayName: b?.name ?? a.barangayCode,
           note: a.note,
-          distanceKm: a.distanceKm(),
+          distanceKm: a.distanceKm(cafeLat: pricing.cafeLat, cafeLng: pricing.cafeLng),
+          lat: a.lat,
+          lng: a.lng,
         );
       }
     }

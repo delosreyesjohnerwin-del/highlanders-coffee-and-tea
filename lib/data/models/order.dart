@@ -96,6 +96,8 @@ class AddressSnapshot {
     required this.barangayName,
     this.note,
     this.distanceKm,
+    this.lat,
+    this.lng,
   });
 
   final String label;
@@ -103,7 +105,14 @@ class AddressSnapshot {
   final String barangayCode;
   final String barangayName;
   final String? note;
+
+  /// The distance and fee that were actually charged at order time, frozen on
+  /// the snapshot so later admin edits to the origin never rewrite history.
   final double? distanceKm;
+
+  /// GPS pin coordinates, when the address was picked on the map.
+  final double? lat;
+  final double? lng;
 
   String get oneLine => '$street, $barangayName';
 }
@@ -177,6 +186,8 @@ class SavedAddress {
     required this.barangayCode,
     this.note,
     this.isDefault = false,
+    this.lat,
+    this.lng,
   });
 
   final String id;
@@ -186,12 +197,53 @@ class SavedAddress {
   final String? note;
   final bool isDefault;
 
-  /// Straight-line distance from the café, derived from the bundled
-  /// barangay centroid. Null when the barangay is not in the coverage table.
-  double? distanceKm() {
+  /// Optional GPS pin coordinates. Null for legacy addresses saved before the
+  /// pin picker existed — those fall back to their barangay's centroid.
+  final double? lat;
+  final double? lng;
+
+  /// Straight-line distance from the café.
+  ///
+  /// When the address carries a GPS pin and the café's coordinates are known,
+  /// this is the real pin-to-café haversine distance. Legacy addresses without
+  /// a pin fall back to the bundled barangay centroid. `cafeLat`/`cafeLng`
+  /// default to the bundled [LumbanCoverage] placeholder; the cart passes the
+  /// live admin-configured coordinates through so both modes share one origin.
+  /// Null when the barangay is not in the coverage table.
+  double? distanceKm({double? cafeLat, double? cafeLng}) {
+    final double clat = cafeLat ?? LumbanCoverage.cafeLat;
+    final double clng = cafeLng ?? LumbanCoverage.cafeLng;
+
+    final double? pinLat = lat;
+    final double? pinLng = lng;
+    if (pinLat != null && pinLng != null) {
+      return haversineKm(lat1: clat, lng1: clng, lat2: pinLat, lng2: pinLng);
+    }
+
     final Barangay? b = LumbanCoverage.byCode(barangayCode);
-    return b == null ? null : LumbanCoverage.distanceToBarangay(b);
+    if (b == null) return null;
+    return haversineKm(lat1: clat, lng1: clng, lat2: b.lat, lng2: b.lng);
   }
+
+  SavedAddress copyWith({
+    String? label,
+    String? street,
+    String? barangayCode,
+    String? note,
+    bool? isDefault,
+    double? lat,
+    double? lng,
+  }) =>
+      SavedAddress(
+        id: id,
+        label: label ?? this.label,
+        street: street ?? this.street,
+        barangayCode: barangayCode ?? this.barangayCode,
+        note: note ?? this.note,
+        isDefault: isDefault ?? this.isDefault,
+        lat: lat ?? this.lat,
+        lng: lng ?? this.lng,
+      );
 }
 
 /// App user profile.

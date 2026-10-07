@@ -13,6 +13,7 @@ import '../../data/models/order.dart';
 import '../../state/cart_provider.dart';
 import '../../state/catalog_provider.dart';
 import '../../state/session_provider.dart';
+import '../address/address_form_screen.dart';
 import '../checkout/checkout_screen.dart';
 import '../shell/app_shell.dart';
 
@@ -400,13 +401,67 @@ class _AddressBlock extends StatelessWidget {
 
   final CartProvider cart;
 
+  Future<SavedAddress?> _openForm(BuildContext context, {SavedAddress? initial}) =>
+      Navigator.of(context).push<SavedAddress>(
+        MaterialPageRoute<SavedAddress>(builder: (_) => AddressFormScreen(initial: initial)),
+      );
+
+  /// Adds a brand-new address and immediately selects it, so the cart's
+  /// delivery destination is live the moment the form closes.
+  Future<void> _addAddress(BuildContext context) async {
+    final SavedAddress? saved = await _openForm(context);
+    if (saved != null && context.mounted) {
+      cart.selectAddress(saved.id);
+    }
+  }
+
+  Future<void> _editAddress(BuildContext context, SavedAddress address) =>
+      _openForm(context, initial: address);
+
+  Future<void> _deleteAddress(BuildContext context, SavedAddress address) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        backgroundColor: BwColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(BwRadius.card)),
+        title: Text(
+          'Delete ${address.label}?',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: BwColors.text),
+        ),
+        content: Text(
+          '${address.street}, ${LumbanCoverage.byCode(address.barangayCode)?.name ?? address.barangayCode}',
+          style: const TextStyle(fontSize: 14, color: BwColors.textMuted),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel', style: TextStyle(color: BwColors.text)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete', style: TextStyle(color: BwColors.text, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<SessionProvider>().removeAddress(address.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<SavedAddress> addresses = context.watch<SessionProvider>().addresses;
     final AddressSnapshot? selected = cart.addressSnapshot;
+    final DeliveryPricing pricing = context.watch<CatalogProvider>().pricing;
+    final bool outsideRadius = selected != null && !pricing.covers(selected.distanceKm ?? 0);
 
     if (addresses.isEmpty) {
-      return const _NoAddressWarning();
+      return _NoAddressWarning(
+        actionLabel: 'Add address',
+        onAction: () => _addAddress(context),
+      );
     }
 
     return Column(
@@ -421,7 +476,7 @@ class _AddressBlock extends StatelessWidget {
         ),
         ...addresses.map((SavedAddress a) {
           final bool isSelected = a.id == cart.addressId;
-          final double? km = a.distanceKm();
+          final double? km = a.distanceKm(cafeLat: pricing.cafeLat, cafeLng: pricing.cafeLng);
 
           return Padding(
             padding: const EdgeInsets.only(bottom: BwSpacing.sm),
@@ -468,10 +523,24 @@ class _AddressBlock extends StatelessWidget {
                         ),
                       ),
                       if (km != null)
-                        Text(
-                          Fmt.distance(km),
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BwColors.textMuted),
+                        Padding(
+                          padding: const EdgeInsets.only(right: BwSpacing.xs),
+                          child: Text(
+                            Fmt.distance(km),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: BwColors.textMuted),
+                          ),
                         ),
+                      _RowAction(
+                        icon: Icons.edit_outlined,
+                        tooltip: 'Edit ${a.label}',
+                        onTap: () => _editAddress(context, a),
+                      ),
+                      _RowAction(
+                        icon: Icons.delete_outline_rounded,
+                        tooltip: 'Delete ${a.label}',
+                        color: BwColors.textMuted,
+                        onTap: () => _deleteAddress(context, a),
+                      ),
                     ],
                   ),
                 ),
@@ -479,9 +548,40 @@ class _AddressBlock extends StatelessWidget {
             ),
           );
         }),
-        if (selected != null && !context.watch<CatalogProvider>().pricing.covers(selected.distanceKm ?? 0))
+        Padding(
+          padding: const EdgeInsets.only(bottom: BwSpacing.sm),
+          child: Material(
+            color: BwColors.surface,
+            borderRadius: BorderRadius.circular(BwRadius.card),
+            child: InkWell(
+              onTap: () => _addAddress(context),
+              borderRadius: BorderRadius.circular(BwRadius.card),
+              child: Container(
+                padding: const EdgeInsets.all(BwSpacing.lg),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(BwRadius.card),
+                  border: Border.all(color: BwColors.borderStrong, width: BwStroke.strong),
+                ),
+                child: const Row(
+                  children: <Widget>[
+                    Icon(Icons.add_location_alt_outlined, size: 19, color: BwColors.text),
+                    SizedBox(width: BwSpacing.md),
+                    Expanded(
+                      child: Text(
+                        'Add a new address',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: BwColors.text),
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, size: 20, color: BwColors.textMuted),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (outsideRadius)
           const Padding(
-            padding: EdgeInsets.only(top: BwSpacing.sm),
+            padding: EdgeInsets.only(top: BwSpacing.xs),
             child: _NoAddressWarning(
               message: 'That address is outside our Lumban delivery radius. '
                   'Please choose a nearer barangay or switch to pick up.',
@@ -494,10 +594,45 @@ class _AddressBlock extends StatelessWidget {
   static String _barangayName(String code) => LumbanCoverage.byCode(code)?.name ?? code;
 }
 
+class _RowAction extends StatelessWidget {
+  const _RowAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    this.color = BwColors.text,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: BwColors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          customBorder: const CircleBorder(),
+          child: SizedBox(width: 32, height: 32, child: Icon(icon, size: 18, color: color)),
+        ),
+      ),
+    );
+  }
+}
+
 class _NoAddressWarning extends StatelessWidget {
-  const _NoAddressWarning({this.message = 'Add a delivery address to continue, or switch to pick up.'});
+  const _NoAddressWarning({
+    this.message = 'Add a delivery address to continue, or switch to pick up.',
+    this.actionLabel,
+    this.onAction,
+  });
 
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -520,6 +655,21 @@ class _NoAddressWarning extends StatelessWidget {
               style: const TextStyle(fontSize: 13, height: 1.4, color: BwColors.text),
             ),
           ),
+          if (actionLabel != null && onAction != null) ...<Widget>[
+            const SizedBox(width: BwSpacing.sm),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: BwSpacing.md, vertical: 6),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                actionLabel!,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: BwColors.text),
+              ),
+            ),
+          ],
         ],
       ),
     );

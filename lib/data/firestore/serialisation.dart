@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/settings.dart';
@@ -172,6 +173,8 @@ extension StoreSettingsSerialisation on StoreSettings {
         'baseFee': baseFee.toDouble(),
         'freeOver': freeOver.toDouble(),
         'coverageRadiusKm': coverageRadiusKm,
+        'cafeLat': cafeLat,
+        'cafeLng': cafeLng,
         'opensAt': opensAt,
         'closesAt': closesAt,
       };
@@ -186,6 +189,11 @@ extension StoreSettingsSerialisation on StoreSettings {
         baseFee: _toNum(_body(raw)['baseFee']) ?? 25,
         freeOver: _toNum(_body(raw)['freeOver']) ?? 500,
         coverageRadiusKm: _toDouble(_body(raw)['coverageRadiusKm']) ?? 10,
+        // A settings document written before the café coordinates existed
+        // falls back to the bundled placeholder rather than to zero, which
+        // would make every distance read as the full radius.
+        cafeLat: _toDouble(_body(raw)['cafeLat']) ?? LumbanCoverage.cafeLat,
+        cafeLng: _toDouble(_body(raw)['cafeLng']) ?? LumbanCoverage.cafeLng,
         opensAt: _toStr(_body(raw)['opensAt']) ?? '7:00 AM',
         closesAt: _toStr(_body(raw)['closesAt']) ?? '10:00 PM',
       );
@@ -283,6 +291,8 @@ extension AddressSnapshotSerialisation on AddressSnapshot {
         'barangayName': barangayName,
         if (note != null) 'note': note,
         if (distanceKm != null) 'distanceKm': distanceKm,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
       };
 
   static AddressSnapshot fromMap(Map<String, dynamic>? raw) => AddressSnapshot(
@@ -292,6 +302,8 @@ extension AddressSnapshotSerialisation on AddressSnapshot {
         barangayName: _toStr(_body(raw)['barangayName']) ?? '',
         note: _toStr(_body(raw)['note']),
         distanceKm: _toDouble(_body(raw)['distanceKm']),
+        lat: _toDouble(_body(raw)['lat']),
+        lng: _toDouble(_body(raw)['lng']),
       );
 }
 
@@ -391,6 +403,8 @@ extension SavedAddressSerialisation on SavedAddress {
         'barangayCode': barangayCode,
         if (note != null) 'note': note,
         'isDefault': isDefault,
+        if (lat != null) 'lat': lat,
+        if (lng != null) 'lng': lng,
       };
 
   static SavedAddress fromMap(Map<String, dynamic>? raw, String fallbackId) => SavedAddress(
@@ -400,5 +414,9 @@ extension SavedAddressSerialisation on SavedAddress {
         barangayCode: _toStr(_body(raw)['barangayCode']) ?? '',
         note: _toStr(_body(raw)['note']),
         isDefault: _toBool(_body(raw)['isDefault']) ?? false,
+        // Legacy documents have no pin; they read back as null so the barangay
+        // fallback keeps pricing them.
+        lat: _toDouble(_body(raw)['lat']),
+        lng: _toDouble(_body(raw)['lng']),
       );
 }

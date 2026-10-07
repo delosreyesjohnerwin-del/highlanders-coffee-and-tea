@@ -737,6 +737,25 @@ void main() {
       await scrollToEnd(tester, find.byType(ListView).first);
     });
 
+    testWidgets('settings section edits café coordinates', (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.settings,
+      ));
+
+      // The café-location fields live in the Delivery card.
+      await revealByDragging(tester, find.text('Café latitude'), find.byType(ListView).first);
+      expect(find.text('Café longitude'), findsOneWidget);
+      // The bundled placeholder is pre-filled.
+      expect(find.text('14.2919'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const ValueKey<String>('admin-cafe-lat')), '14.3000');
+      await tester.pumpAndSettle();
+
+      // The origin hint echoes the stored value with fixed precision.
+      expect(find.textContaining('Coordinates (14.3000'), findsOneWidget);
+    });
+
     testWidgets('no admin section overflows at 360dp', (WidgetTester tester) async {
       await usePhone(tester);
 
