@@ -746,8 +746,8 @@ void main() {
       // The café-location fields live in the Delivery card.
       await revealByDragging(tester, find.text('Café latitude'), find.byType(ListView).first);
       expect(find.text('Café longitude'), findsOneWidget);
-      // The bundled placeholder is pre-filled.
-      expect(find.text('14.2919'), findsOneWidget);
+      // The bundled café pin is pre-filled (fields show four decimals).
+      expect(find.text('14.3067'), findsOneWidget);
 
       await tester.enterText(find.byKey(const ValueKey<String>('admin-cafe-lat')), '14.3000');
       await tester.pumpAndSettle();

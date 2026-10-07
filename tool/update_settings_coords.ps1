@@ -9,15 +9,15 @@
 # under mock data), and it rewrites every document anyway. This one-op ship is for
 # the narrow case: the Phase 1 delivery-address feature added cafeLat/cafeLng to
 # the Settings document, and the live document predates them. The app falls back
-# to the bundled placeholder coordinates when the fields are absent, so this is
-# not a correctness fix — it makes the live document self-describing and lets the
-# owner see exactly what is stored before confirming the real café pin.
+# to the bundled café pin when the fields are absent, so this keeps the live
+# document in sync with the pin the owner confirmed and lets them see exactly
+# what is stored.
 #
-# Values default to the bundled Lumban placeholder (Poblacion). Override per run:
-#   ... -CafeLat 14.2919 -CafeLng 121.4644
+# Values default to the bundled café pin (owner-confirmed). Override per run:
+#   ... -CafeLat 14.3067497 -CafeLng 121.4773666
 param(
-  [double]$CafeLat = 14.2919,
-  [double]$CafeLng = 121.4644,
+  [double]$CafeLat = 14.3067497,
+  [double]$CafeLng = 121.4773666,
   [switch]$Check
 )
 

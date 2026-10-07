@@ -106,16 +106,17 @@ class DeliveryPricing {
 
 /// Café location and the bundled Lumban coverage table.
 ///
-/// TODO(owner): replace the placeholder café coordinates and confirm the
-/// barangay centroids below before shipping — fees and ETAs depend on them.
+/// TODO(owner): confirm the barangay centroids below before shipping — fees
+/// and ETAs depend on them. The café pin itself is the confirmed origin.
 class LumbanCoverage {
   const LumbanCoverage._();
 
   static const String municipality = 'Lumban, Laguna';
 
-  /// Approximate centroid of Poblacion, Lumban.
-  static const double cafeLat = 14.2919;
-  static const double cafeLng = 121.4644;
+  /// The café's confirmed location (owner-verified Google Maps pin
+  /// 14.3067497,121.4773666; the municipality pin is 14.3041986,121.4381242).
+  static const double cafeLat = 14.3067497;
+  static const double cafeLng = 121.4773666;
 
   static double distanceToBarangay(Barangay b) => haversineKm(
         lat1: cafeLat,

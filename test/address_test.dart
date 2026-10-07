@@ -172,8 +172,8 @@ void main() {
         label: 'Home',
         street: '1 Mug St',
         barangayCode: 'lumban-marawoy',
-        lat: 14.2919,
-        lng: 121.4644,
+        lat: LumbanCoverage.cafeLat,
+        lng: LumbanCoverage.cafeLng,
       );
 
       // The barangay says Marawoy (several hundred metres away), but the pin
