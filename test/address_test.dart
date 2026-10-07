@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlanders_coffee/app.dart';
 import 'package:highlanders_coffee/core/firebase/firebase_bootstrap.dart';
@@ -7,6 +8,7 @@ import 'package:highlanders_coffee/data/mock/mock_data.dart';
 import 'package:highlanders_coffee/data/models/coverage.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/features/address/address_form_screen.dart';
+import 'package:highlanders_coffee/features/address/pin_picker_screen.dart';
 import 'package:highlanders_coffee/features/address/saved_addresses_screen.dart';
 import 'package:highlanders_coffee/features/home/widgets/menu_item_card.dart';
 import 'package:highlanders_coffee/features/shell/app_shell.dart';
@@ -422,6 +424,56 @@ void main() {
       expect(find.text('123 Poblacion Road'), findsNothing);
       // The pruned selection means no as-selected radio remains.
       expect(find.byIcon(Icons.radio_button_checked_rounded), findsNothing);
+    });
+  });
+
+  group('pin picker (Phase 2)', () {
+    testWidgets('map opens from the form and a tap sets the delivery pin',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      await tapTab(tester, 'Profile');
+      await tester.ensureVisible(find.text('Saved Addresses'));
+      await tester.tap(find.text('Saved Addresses'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add new address'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddressFormScreen), findsOneWidget);
+
+      // The form starts without a pin.
+      expect(find.text('Set exact delivery pin'), findsOneWidget);
+
+      // Open the map picker.
+      await revealForTap(tester, find.text('Set exact delivery pin'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinPickerScreen), findsOneWidget);
+      expect(find.byType(FlutterMap), findsOneWidget);
+
+      // Drop a pin by tapping near the map centre (the café, since the picker
+      // centres there for new addresses).
+      final Rect mapRect = tester.getRect(find.byType(FlutterMap));
+      await tester.tapAt(Offset(mapRect.center.dx, mapRect.center.dy));
+      await tester.pump();
+      // flutter_map only fires onTap after a 250ms double-tap discrimination
+      // window, so the fake clock must advance past it before the pin lands.
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // The pin lands at the OSM-tap position; coordinates appear in the footer.
+      expect(find.text('Confirm delivery pin'), findsOneWidget);
+      expect(
+        find.textContaining('14.30'),
+        findsOneWidget,
+        reason: 'the map tap must place a pin whose coordinates show in the footer',
+      );
+
+      // Confirm: pops back to the form, which now shows the pin as set.
+      await tester.tap(find.text('Confirm delivery pin'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PinPickerScreen), findsNothing);
+      expect(find.byType(AddressFormScreen), findsOneWidget);
+      expect(find.text('Delivery pin set'), findsOneWidget);
     });
   });
 }

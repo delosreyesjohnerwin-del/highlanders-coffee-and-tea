@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/bw_colors.dart';
@@ -9,6 +10,7 @@ import '../../data/models/coverage.dart';
 import '../../data/models/order.dart';
 import '../../state/catalog_provider.dart';
 import '../../state/session_provider.dart';
+import 'pin_picker_screen.dart';
 
 /// Add or edit a saved delivery address.
 ///
@@ -41,6 +43,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
   late String _label;
   late String _barangayCode;
   late bool _isDefault;
+  double? _lat;
+  double? _lng;
 
   @override
   void initState() {
@@ -51,6 +55,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     _barangayCode = a?.barangayCode ?? '';
     _note.text = a?.note ?? '';
     _isDefault = a?.isDefault ?? false;
+    _lat = a?.lat;
+    _lng = a?.lng;
   }
 
   @override
@@ -65,6 +71,22 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     if (_label != 'Other') return _label;
     final String custom = _customLabel.text.trim();
     return custom.isEmpty ? 'Other' : custom;
+  }
+
+  Future<void> _openPinPicker() async {
+    final LatLng? picked = await Navigator.of(context).push<LatLng>(
+      MaterialPageRoute<LatLng>(
+        builder: (_) => PinPickerScreen(
+          initial: (_lat != null && _lng != null) ? LatLng(_lat!, _lng!) : null,
+        ),
+      ),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _lat = picked.latitude;
+        _lng = picked.longitude;
+      });
+    }
   }
 
   void _save(BuildContext context) {
@@ -85,7 +107,10 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       barangayCode: _barangayCode,
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       isDefault: _isDefault,
-      // Phase 2: the map pin supplies lat/lng here.
+      // Phase 2: the map pin supplies real GPS coordinates, so the fee is
+      // pin-to-café rather than barangay-centroid.
+      lat: _lat,
+      lng: _lng,
     );
 
     context.read<SessionProvider>().addAddress(address);
@@ -199,7 +224,11 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
                 },
               ),
               const SizedBox(height: BwSpacing.md),
-              const _LatLngHint(),
+              _PinTile(
+                lat: _lat,
+                lng: _lng,
+                onTap: _openPinPicker,
+              ),
               const SizedBox(height: BwSpacing.lg),
               const _SectionTitle(title: 'Delivery note'),
               const SizedBox(height: BwSpacing.sm),
@@ -220,7 +249,11 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
                 onChanged: (bool v) => setState(() => _isDefault = v),
               ),
               const SizedBox(height: BwSpacing.lg),
-              _EstimatePreview(barangayCode: _barangayCode),
+              _EstimatePreview(
+                barangayCode: _barangayCode,
+                lat: _lat,
+                lng: _lng,
+              ),
               const SizedBox(height: BwSpacing.xl),
               BwButton(
                 label: 'Save address',
@@ -262,33 +295,67 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
-/// Interstitial note that keeps the Google Maps promise visible without
-/// pretending the picker is live.
-class _LatLngHint extends StatelessWidget {
-  const _LatLngHint();
+/// Tappable card that opens the OSM pin picker and shows the current pin.
+class _PinTile extends StatelessWidget {
+  const _PinTile({required this.lat, required this.lng, required this.onTap});
+
+  final double? lat;
+  final double? lng;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(BwSpacing.md),
-      decoration: BoxDecoration(
-        color: BwColors.subtle,
+    final bool hasPin = lat != null && lng != null;
+
+    return Material(
+      color: BwColors.surface,
+      borderRadius: BorderRadius.circular(BwRadius.card),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(BwRadius.card),
-        border: Border.all(color: BwColors.border),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(Icons.my_location_outlined, size: 17, color: BwColors.textMuted),
-          SizedBox(width: BwSpacing.sm),
-          Expanded(
-            child: Text(
-              'Pin-exact delivery is coming in Phase 2. Until then, fees use the '
-              'distance from the café to the barangay you choose.',
-              style: TextStyle(fontSize: 12, height: 1.4, color: BwColors.textMuted),
+        child: Container(
+          padding: const EdgeInsets.all(BwSpacing.md),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(BwRadius.card),
+            border: Border.all(
+              color: hasPin ? BwColors.inverse : BwColors.border,
+              width: hasPin ? BwStroke.strong : BwStroke.hairline,
             ),
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              Icon(
+                hasPin ? Icons.location_on : Icons.my_location_outlined,
+                size: 22,
+                color: hasPin ? BwColors.inverse : BwColors.textMuted,
+              ),
+              const SizedBox(width: BwSpacing.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      hasPin ? 'Delivery pin set' : 'Set exact delivery pin',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: BwColors.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      hasPin
+                          ? '${lat!.toStringAsFixed(6)}, ${lng!.toStringAsFixed(6)}'
+                          : 'Tap to open the map and drop a pin on your spot.',
+                      style: const TextStyle(fontSize: 12.5, height: 1.4, color: BwColors.textMuted),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, size: 22, color: BwColors.textMuted),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -337,40 +404,62 @@ class _DefaultToggle extends StatelessWidget {
   }
 }
 
-/// Live delivery estimate for the chosen barangay, computed against the same
-/// pricing snapshot the cart uses.
+/// Live delivery estimate for the chosen barangay (or the exact pin when one
+/// is set), computed against the same pricing snapshot the cart uses.
 class _EstimatePreview extends StatelessWidget {
-  const _EstimatePreview({required this.barangayCode});
+  const _EstimatePreview({required this.barangayCode, this.lat, this.lng});
 
   final String barangayCode;
+  final double? lat;
+  final double? lng;
 
   @override
   Widget build(BuildContext context) {
     final DeliveryPricing pricing = context.watch<CatalogProvider>().pricing;
     final Barangay? b = LumbanCoverage.byCode(barangayCode);
 
-    if (b == null) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(BwSpacing.md),
-        decoration: BoxDecoration(
-          color: BwColors.surface,
-          borderRadius: BorderRadius.circular(BwRadius.card),
-          border: Border.all(color: BwColors.border),
-        ),
-        child: const Text(
-          'Choose a barangay to see the delivery estimate.',
-          style: TextStyle(fontSize: 12.5, color: BwColors.textMuted),
-        ),
+    if (lat == null || lng == null) {
+      if (b == null) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(BwSpacing.md),
+          decoration: BoxDecoration(
+            color: BwColors.surface,
+            borderRadius: BorderRadius.circular(BwRadius.card),
+            border: Border.all(color: BwColors.border),
+          ),
+          child: const Text(
+            'Choose a barangay or set a pin to see the delivery estimate.',
+            style: TextStyle(fontSize: 12.5, color: BwColors.textMuted),
+          ),
+        );
+      }
+
+      final double km = haversineKm(
+        lat1: pricing.cafeLat,
+        lng1: pricing.cafeLng,
+        lat2: b.lat,
+        lng2: b.lng,
       );
+      return _buildEstimate(context, pricing, km, pinExact: false);
     }
 
+    // A pin beats the barangay centroid: this is where the rider actually goes.
     final double km = haversineKm(
       lat1: pricing.cafeLat,
       lng1: pricing.cafeLng,
-      lat2: b.lat,
-      lng2: b.lng,
+      lat2: lat!,
+      lng2: lng!,
     );
+    return _buildEstimate(context, pricing, km, pinExact: true);
+  }
+
+  Widget _buildEstimate(
+    BuildContext context,
+    DeliveryPricing pricing,
+    double km, {
+    required bool pinExact,
+  }) {
     final num fee = pricing.feeFor(km: km, subtotal: 0);
     final bool covered = pricing.covers(km);
     final num? freeOver = pricing.freeOver;
@@ -388,7 +477,10 @@ class _EstimatePreview extends StatelessWidget {
           ),
           child: Column(
             children: <Widget>[
-              _EstimateRow(label: 'Distance', value: Fmt.distance(km)),
+              _EstimateRow(
+                label: pinExact ? 'Distance (pin)' : 'Distance',
+                value: Fmt.distance(km),
+              ),
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: BwSpacing.sm),
                 child: Divider(height: 1),
