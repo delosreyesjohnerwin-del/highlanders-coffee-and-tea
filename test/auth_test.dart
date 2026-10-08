@@ -472,16 +472,46 @@ void main() {
     test('advancing an order moves it one pipeline step', () {
       final AdminProvider admin = AdminProvider();
       final String id = admin.openOrders.first.id;
-      final OrderStatus before = admin.openOrders.first.status;
+      final Order before = admin.openOrders.first;
+      final OrderStatus priorStatus = before.status;
 
       expect(admin.advanceOrder(id), isTrue);
 
       final Order after = admin.orders.firstWhere((Order o) => o.id == id);
       expect(
         after.status.index,
-        before.index + 1,
+        priorStatus.index + 1,
         reason: 'advance must be exactly one step',
       );
+      // Every progress write stamps a history event, so the customer's
+      // timeline gains a real per-step timestamp.
+      expect(after.statusHistory, hasLength(before.statusHistory.length + 1));
+      expect(after.statusHistory.last.status, after.status);
+    });
+
+    test('cancelling records the cancellation as the newest event', () {
+      final AdminProvider admin = AdminProvider();
+      final Order target = admin.openOrders.first;
+
+      admin.cancelOrder(target.id);
+
+      final Order after = admin.orders.firstWhere((Order o) => o.id == target.id);
+      expect(after.status, OrderStatus.cancelled);
+      expect(after.statusHistory, isNotEmpty);
+      expect(after.statusHistory.last.status, OrderStatus.cancelled);
+    });
+
+    test('reassigning a driver appends no history event', () {
+      final AdminProvider admin = AdminProvider();
+      final String id = admin.openOrders.first.id;
+      final int eventsBefore = admin.openOrders.first.statusHistory.length;
+      final String idBefore = admin.openOrders.first.driverName ?? '';
+
+      admin.assignDriver(id, 'New Rider', '+63 900 000 0000');
+
+      final Order after = admin.orders.firstWhere((Order o) => o.id == id);
+      expect(after.driverName, isNot(idBefore));
+      expect(after.statusHistory, hasLength(eventsBefore));
     });
 
     test('toggling a shift flips working state', () {

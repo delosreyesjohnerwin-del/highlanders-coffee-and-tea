@@ -228,11 +228,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // because the repository has no way to know who is signed in — and the rules
     // require the field to equal the caller's uid. Setting it from the session
     // keeps the two in step by construction.
+    final OrderStatus initial =
+        cart.paymentMethod.isPrepaid ? OrderStatus.confirmed : OrderStatus.pending;
     final Order order = Order(
       customerUid: context.read<SessionProvider>().user.uid,
       id: Fmt.orderId(pickupCode),
       lines: cart.lines,
-      status: cart.paymentMethod.isPrepaid ? OrderStatus.confirmed : OrderStatus.pending,
+      status: initial,
       fulfillment: cart.fulfillment,
       paymentMethod: cart.paymentMethod,
       createdAt: DateTime.now(),
@@ -243,6 +245,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       pickupCode: pickupCode,
       promoCode: cart.promoCode,
       paymentRef: cart.paymentMethod.isPrepaid ? 'PAY-$pickupCode' : null,
+      // The first step happened the moment the order was placed.
+      statusHistory: <OrderStatusEvent>[
+        OrderStatusEvent(status: initial, at: DateTime.now()),
+      ],
     );
 
     context.read<SessionProvider>().placeOrder(order);

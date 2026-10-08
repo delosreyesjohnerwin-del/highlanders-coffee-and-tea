@@ -331,6 +331,13 @@ extension OrderSerialisation on Order {
         if (driverPhone != null) 'driverPhone': driverPhone,
         if (paymentRef != null) 'paymentRef': paymentRef,
         if (promoCode != null) 'promoCode': promoCode,
+        if (statusHistory.isNotEmpty)
+          'statusHistory': statusHistory
+              .map((OrderStatusEvent e) => <String, dynamic>{'status': e.status.name, 'at': _date(e.at)})
+              .toList(),
+        if (trackingNumber != null) 'trackingNumber': trackingNumber,
+        if (carrierName != null) 'carrierName': carrierName,
+        if (carrierUrl != null) 'carrierUrl': carrierUrl,
       };
 
   static Order fromMap(Map<String, dynamic>? raw, String fallbackId) => Order(
@@ -363,7 +370,36 @@ extension OrderSerialisation on Order {
         driverPhone: _toStr(_body(raw)['driverPhone']),
         paymentRef: _toStr(_body(raw)['paymentRef']),
         promoCode: _toStr(_body(raw)['promoCode']),
+        // Missing or corrupt history reads as empty; the tracking screen treats
+        // that the same as a pre-tracking order.
+        statusHistory: _history(_body(raw)['statusHistory']),
+        trackingNumber: _toStr(_body(raw)['trackingNumber']),
+        carrierName: _toStr(_body(raw)['carrierName']),
+        carrierUrl: _toStr(_body(raw)['carrierUrl']),
       );
+}
+
+/// Reads a stored order status history into events, in stored order.
+///
+/// A corrupt entry is skipped rather than failing the whole order: one bad
+/// timestamp should not drop a customer's order from the board.
+List<OrderStatusEvent> _history(Object? raw) {
+  if (raw is! List) return const <OrderStatusEvent>[];
+
+  final List<OrderStatusEvent> events = <OrderStatusEvent>[];
+  for (final Object? item in raw) {
+    if (item is! Map<String, dynamic>) continue;
+    final DateTime? at = _toDate(item['at']);
+    if (at == null) continue;
+    events.add(
+      OrderStatusEvent(
+        status: _enumByName(item['status'], OrderStatus.values, OrderStatus.pending,
+            labelOf: (OrderStatus s) => s.label),
+        at: at,
+      ),
+    );
+  }
+  return events;
 }
 
 // --- StaffMember ----------------------------------------------------------

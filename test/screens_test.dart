@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:highlanders_coffee/app.dart';
 import 'package:highlanders_coffee/core/firebase/firebase_bootstrap.dart';
+import 'package:highlanders_coffee/core/utils/formatters.dart';
+import 'package:highlanders_coffee/core/widgets/bw_accordion.dart';
 import 'package:highlanders_coffee/data/mock/mock_data.dart';
 import 'package:highlanders_coffee/data/models/menu.dart';
+import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/features/admin/admin_dashboard_screen.dart';
 import 'package:highlanders_coffee/features/admin/sections/admin_overview_section.dart';
 import 'package:highlanders_coffee/features/checkout/checkout_screen.dart';
@@ -332,6 +335,107 @@ void main() {
       expect(find.text('Status'), findsOneWidget);
 
       await scrollToEnd(tester, find.byType(ListView).first);
+    });
+
+    testWidgets('status accordion collapses by default and expands on tap',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      await tapTab(tester, 'Orders');
+      await tester.tap(
+        find.descendant(
+          of: find.byType(ListView),
+          matching: find.text('Highlanders Coffee & Tea'),
+        ).first,
+      );
+      await tester.pumpAndSettle();
+
+      // Collapsed by default: the chevron points down and the timeline body
+      // is not part of the tree yet.
+      Finder chevron() => find.descendant(
+          of: find.byType(BwAccordion), matching: find.byType(AnimatedRotation));
+      expect(tester.widget<AnimatedRotation>(chevron()).turns, 0);
+      expect(find.text('Confirmed'), findsNothing);
+
+      // Tap the header: the body animates open and the chevron turns 180°.
+      await tester.tap(find.text('Status'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedRotation>(chevron()).turns, 0.5);
+      expect(find.text('Confirmed'), findsOneWidget);
+      expect(find.text('Delivered'), findsOneWidget);
+
+      // Tap again: back to collapsed.
+      await tester.tap(find.text('Status'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedRotation>(chevron()).turns, 0);
+      expect(find.text('Confirmed'), findsNothing);
+      expect(find.text('Track'), findsNothing);
+    });
+
+    testWidgets('completed steps show their recorded timestamps',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      final DateTime placedAt = DateTime(2026, 10, 2, 9, 0);
+      final Order delivered = Order(
+        id: 'HL-TEST-9001',
+        customerUid: 'u-selftest',
+        lines: const <OrderLine>[
+          OrderLine(itemId: 'm-icedlatte', name: 'Iced Latte', price: 125, quantity: 1),
+        ],
+        status: OrderStatus.delivered,
+        fulfillment: Fulfillment.delivery,
+        paymentMethod: PaymentMethod.gcash,
+        createdAt: placedAt,
+        subtotal: 125,
+        deliveryFee: 25,
+        statusHistory: <OrderStatusEvent>[
+          OrderStatusEvent(status: OrderStatus.pending, at: placedAt),
+          OrderStatusEvent(status: OrderStatus.confirmed, at: DateTime(2026, 10, 2, 9, 5)),
+          OrderStatusEvent(status: OrderStatus.outForDelivery, at: DateTime(2026, 10, 2, 9, 20)),
+          OrderStatusEvent(status: OrderStatus.delivered, at: DateTime(2026, 10, 2, 9, 45)),
+        ],
+      );
+
+      await pumpApp(tester, home: OrderTrackingScreen(order: delivered));
+      await tester.tap(find.text('Status'));
+      await tester.pumpAndSettle();
+
+      // A step with no recorded event (this order skipped "Preparing"/"Ready")
+      // shows no timestamp line.
+      expect(find.text(Fmt.dateTime(DateTime(2026, 10, 2, 9, 5))), findsOneWidget);
+      expect(find.text(Fmt.dateTime(DateTime(2026, 10, 2, 9, 20))), findsOneWidget);
+      expect(find.text(Fmt.dateTime(DateTime(2026, 10, 2, 9, 45))), findsOneWidget);
+    });
+
+    testWidgets('carrier tracking row appears only when a number is set',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      final Order shipped = Order(
+        id: 'HL-TEST-9002',
+        customerUid: 'u-selftest',
+        lines: const <OrderLine>[
+          OrderLine(itemId: 'm-icedlatte', name: 'Iced Latte', price: 125, quantity: 1),
+        ],
+        status: OrderStatus.outForDelivery,
+        fulfillment: Fulfillment.delivery,
+        paymentMethod: PaymentMethod.gcash,
+        createdAt: DateTime(2026, 10, 2, 9, 0),
+        subtotal: 125,
+        deliveryFee: 25,
+        trackingNumber: 'JKE-9002-L',
+        carrierName: 'J&T Express',
+        carrierUrl: 'https://example.com/track/9002',
+      );
+
+      await pumpApp(tester, home: OrderTrackingScreen(order: shipped));
+      await tester.tap(find.text('Status'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('J&T Express · #JKE-9002-L'), findsOneWidget);
+      expect(find.text('Track'), findsOneWidget);
     });
   });
 

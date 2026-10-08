@@ -237,29 +237,44 @@ class AdminProvider extends ChangeNotifier {
     OrderStatus status, {
     String? driver,
     String? phone,
-  }) =>
-      Order(
-        id: o.id,
-        // Carried through every status change: the Firestore rules key customer
-        // order reads on it, so dropping it here would make the order
-        // unreachable from the app that placed it.
-        customerUid: o.customerUid,
-        lines: o.lines,
-        status: status,
-        fulfillment: o.fulfillment,
-        paymentMethod: o.paymentMethod,
-        createdAt: o.createdAt,
-        subtotal: o.subtotal,
-        deliveryFee: o.deliveryFee,
-        distanceKm: o.distanceKm,
-        address: o.address,
-        customerName: o.customerName,
-        pickupCode: o.pickupCode,
-        driverName: driver ?? o.driverName,
-        driverPhone: phone ?? o.driverPhone,
-        paymentRef: o.paymentRef,
-        promoCode: o.promoCode,
-      );
+  }) {
+    // Every progress write stamps a history event so the customer gets real
+    // per-step timestamps. Undo-style writes with the *same* status (rider
+    // reassignment) append nothing — the step did not happen again.
+    final List<OrderStatusEvent> history = status == o.status
+        ? o.statusHistory
+        : <OrderStatusEvent>[
+            ...o.statusHistory,
+            OrderStatusEvent(status: status, at: DateTime.now()),
+          ];
+
+    return Order(
+      id: o.id,
+      // Carried through every status change: the Firestore rules key customer
+      // order reads on it, so dropping it here would make the order
+      // unreachable from the app that placed it.
+      customerUid: o.customerUid,
+      lines: o.lines,
+      status: status,
+      fulfillment: o.fulfillment,
+      paymentMethod: o.paymentMethod,
+      createdAt: o.createdAt,
+      subtotal: o.subtotal,
+      deliveryFee: o.deliveryFee,
+      distanceKm: o.distanceKm,
+      address: o.address,
+      customerName: o.customerName,
+      pickupCode: o.pickupCode,
+      driverName: driver ?? o.driverName,
+      driverPhone: phone ?? o.driverPhone,
+      paymentRef: o.paymentRef,
+      promoCode: o.promoCode,
+      statusHistory: history,
+      trackingNumber: o.trackingNumber,
+      carrierName: o.carrierName,
+      carrierUrl: o.carrierUrl,
+    );
+  }
 
   // --- staff --------------------------------------------------------------
 

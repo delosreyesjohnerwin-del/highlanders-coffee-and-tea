@@ -195,6 +195,17 @@ class SessionProvider extends ChangeNotifier {
                 driverPhone: o.driverPhone,
                 paymentRef: o.paymentRef,
                 promoCode: o.promoCode,
+                // Stamp history the same way the admin panel does, so an
+                // immediate status change is reflected as a real timeline event.
+                statusHistory: status == o.status
+                    ? o.statusHistory
+                    : <OrderStatusEvent>[
+                        ...o.statusHistory,
+                        OrderStatusEvent(status: status, at: DateTime.now()),
+                      ],
+                trackingNumber: o.trackingNumber,
+                carrierName: o.carrierName,
+                carrierUrl: o.carrierUrl,
               )
             : o)
         .toList(growable: false);

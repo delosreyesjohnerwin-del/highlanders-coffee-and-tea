@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/bw_colors.dart';
 import '../../core/theme/bw_metrics.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/widgets/bw_accordion.dart';
 import '../../core/widgets/bw_badge.dart';
 import '../../core/widgets/bw_button.dart';
 import '../../core/widgets/bw_card.dart';
@@ -73,38 +74,60 @@ class OrderTrackingScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              BwBadge(
-                label: current.status.label,
-                variant: current.status.isTerminal ? BwBadgeVariant.subtle : BwBadgeVariant.solid,
-              ),
             ],
           ),
 
           const SizedBox(height: BwSpacing.xl),
 
-          // Status stepper.
-          BwCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text(
-                  'Status',
-                  style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700, color: BwColors.text),
-                ),
-                const SizedBox(height: BwSpacing.lg),
-                ...List<Widget>.generate(_pipeline.length, (int i) {
-                  final bool done = i <= currentStep;
-                  final bool isLast = i == _pipeline.length - 1;
-
-                  return _StepRow(
-                    label: _stepLabel(_pipeline[i], pickup: pickup),
-                    done: done,
-                    isLast: isLast,
-                    isCurrent: i == currentStep,
-                  );
-                }),
-              ],
+          // Status timeline: a collapsible accordion, so the detail stays out
+          // of the way until the customer asks for it. The badge lives in the
+          // header — tapping the whole bar (or the chevron) reveals the steps.
+          BwAccordion(
+            title: 'Status',
+            badge: BwBadge(
+              label: current.status.label,
+              variant: current.status.isTerminal ? BwBadgeVariant.subtle : BwBadgeVariant.solid,
+              dense: true,
             ),
+            children: <Widget>[
+              ...List<Widget>.generate(_pipeline.length, (int i) {
+                final bool done = i <= currentStep;
+                final bool isLast = i == _pipeline.length - 1;
+
+                return _StepRow(
+                  label: _stepLabel(_pipeline[i], pickup: pickup),
+                  done: done,
+                  isLast: isLast,
+                  isCurrent: i == currentStep,
+                  at: _stepTime(current, _pipeline[i], done),
+                );
+              }),
+              if (current.trackingNumber != null) ...<Widget>[
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: BwSpacing.sm),
+                  child: Divider(height: 1),
+                ),
+                _TrackingRow(order: current),
+              ],
+              if (current.status.isTerminal &&
+                  current.status != OrderStatus.delivered) ...<Widget>[
+                const SizedBox(height: BwSpacing.sm),
+                Row(
+                  children: <Widget>[
+                    const Icon(Icons.info_outline_rounded, size: 16, color: BwColors.textMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        current.status == OrderStatus.cancelled
+                            ? 'This order was cancelled.'
+                            : 'This order could not be delivered.',
+                        style: const TextStyle(fontSize: 12.5, color: BwColors.textMuted),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
           ),
 
           // Driver card — only for deliveries that are actually on the road.
@@ -240,6 +263,17 @@ class OrderTrackingScreen extends StatelessWidget {
     return i < 0 ? 0 : i;
   }
 
+  /// The timestamp to show under [step], or null when it has none.
+  ///
+  /// Completed steps carry their recorded history time. Steps before status
+  /// tracking existed have no event; the very first step then falls back to
+  /// the order's placed-at time so the timeline never reads completely bare.
+  static DateTime? _stepTime(Order order, OrderStatus step, bool done) {
+    if (!done) return null;
+    return order.enteredAt(step) ??
+        (step == _pipeline.first ? order.createdAt : null);
+  }
+
   static String _stepLabel(OrderStatus status, {required bool pickup}) {
     if (pickup) {
       return switch (status) {
@@ -262,6 +296,7 @@ class _StepRow extends StatelessWidget {
     required this.done,
     required this.isLast,
     required this.isCurrent,
+    this.at,
   });
 
   final String label;
@@ -269,8 +304,13 @@ class _StepRow extends StatelessWidget {
   final bool isLast;
   final bool isCurrent;
 
+  /// When this step completed; hides the timestamp line when null.
+  final DateTime? at;
+
   @override
   Widget build(BuildContext context) {
+    final DateTime? time = at;
+
     return IntrinsicHeight(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -309,17 +349,81 @@ class _StepRow extends StatelessWidget {
           const SizedBox(width: BwSpacing.md),
           Padding(
             padding: EdgeInsets.only(bottom: isLast ? 0 : BwSpacing.lg, top: 1),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 14.5,
-                fontWeight: done ? FontWeight.w700 : FontWeight.w500,
-                color: done ? BwColors.text : BwColors.textMuted,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: done ? FontWeight.w700 : FontWeight.w500,
+                    color: done ? BwColors.text : BwColors.textMuted,
+                  ),
+                ),
+                if (time != null) ...<Widget>[
+                  const SizedBox(height: 2),
+                  Text(
+                    Fmt.dateTime(time),
+                    style: const TextStyle(fontSize: 11.5, color: BwColors.textMuted),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _TrackingRow extends StatelessWidget {
+  const _TrackingRow({required this.order});
+
+  final Order order;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? carrier = order.carrierName;
+    final String? url = order.carrierUrl;
+
+    return Row(
+      children: <Widget>[
+        const Icon(Icons.local_shipping_outlined, size: 17, color: BwColors.text),
+        const SizedBox(width: BwSpacing.sm),
+        Expanded(
+          child: Text(
+            '${carrier ?? 'Courier'} · #${order.trackingNumber}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: BwColors.text),
+          ),
+        ),
+        if (url != null) ...<Widget>[
+          const SizedBox(width: BwSpacing.sm),
+          InkWell(
+            onTap: () => ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(const SnackBar(content: Text('Tracking link opens here'))),
+            borderRadius: BorderRadius.circular(BwRadius.pill),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: Row(
+                children: <Widget>[
+                  Text(
+                    'Track',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: BwColors.inverse,
+                    ),
+                  ),
+                  SizedBox(width: 2),
+                  Icon(Icons.open_in_new_rounded, size: 13, color: BwColors.inverse),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

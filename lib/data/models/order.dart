@@ -33,6 +33,18 @@ extension OrderStatusX on OrderStatus {
       this != OrderStatus.delivered && this != OrderStatus.cancelled && this != OrderStatus.failedDelivery;
 }
 
+/// One recorded status transition, e.g. "went Out for delivery at 10:42 AM".
+@immutable
+class OrderStatusEvent {
+  const OrderStatusEvent({required this.status, required this.at});
+
+  final OrderStatus status;
+
+  /// When the order entered [status]. Stamped at the moment the admin advances
+  /// or cancels the order, so the customer sees real per-step timestamps.
+  final DateTime at;
+}
+
 enum Fulfillment { pickup, delivery }
 
 extension FulfillmentX on Fulfillment {
@@ -138,6 +150,10 @@ class Order {
     this.paymentRef,
     this.promoCode,
     this.customerUid = '',
+    this.statusHistory = const <OrderStatusEvent>[],
+    this.trackingNumber,
+    this.carrierName,
+    this.carrierUrl,
   });
 
   final String id;
@@ -171,9 +187,32 @@ class Order {
   final String? paymentRef;
   final String? promoCode;
 
+  /// When the order entered each status, in chronological order.
+  ///
+  /// Empty for orders that predate status tracking — the tracking screen then
+  /// falls back to `createdAt` for the first step and omits the rest.
+  final List<OrderStatusEvent> statusHistory;
+
+  /// Courier fields, mostly meaningful only when a third-party delivery
+  /// service is used. Null (and therefore hidden) for in-house riders.
+  final String? trackingNumber;
+  final String? carrierName;
+  final String? carrierUrl;
+
   num get total => subtotal + deliveryFee;
 
   int get itemCount => lines.fold(0, (int sum, OrderLine l) => sum + l.quantity);
+
+  /// When the order last entered [status], or null if it never did.
+  DateTime? enteredAt(OrderStatus status) {
+    DateTime? latest;
+    for (final OrderStatusEvent e in statusHistory) {
+      if (e.status == status && (latest == null || e.at.isAfter(latest))) {
+        latest = e.at;
+      }
+    }
+    return latest;
+  }
 }
 
 /// A saved delivery address.

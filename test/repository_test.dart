@@ -147,6 +147,19 @@ void main() {
         driverPhone: '+63 917 555 0142',
         paymentRef: 'PAY-9F2A41',
         promoCode: 'DAMPOTIST',
+        statusHistory: <OrderStatusEvent>[
+          OrderStatusEvent(
+            status: OrderStatus.pending,
+            at: DateTime(2026, 10, 1, 14, 30),
+          ),
+          OrderStatusEvent(
+            status: OrderStatus.confirmed,
+            at: DateTime(2026, 10, 1, 14, 32),
+          ),
+        ],
+        trackingNumber: 'JKE-4820-X1',
+        carrierName: 'J&T Express',
+        carrierUrl: 'https://example.com/track/JKE-4820-X1',
       );
 
       final Order restored = OrderSerialisation.fromMap(original.toMap(), 'wrong-id');
@@ -169,10 +182,52 @@ void main() {
       expect(restored.address?.lng, 121.4644);
       expect(restored.driverName, 'Rodel');
       expect(restored.promoCode, 'DAMPOTIST');
+      // Status history round-trips as stored events, oldest first.
+      expect(restored.statusHistory, hasLength(2));
+      expect(restored.statusHistory.first.status, OrderStatus.pending);
+      expect(restored.statusHistory.last.status, OrderStatus.confirmed);
+      expect(
+        restored.enteredAt(OrderStatus.confirmed)?.toUtc(),
+        DateTime(2026, 10, 1, 14, 32).toUtc(),
+      );
+      expect(restored.enteredAt(OrderStatus.ready), isNull);
+      // Carrier fields survive when present.
+      expect(restored.trackingNumber, 'JKE-4820-X1');
+      expect(restored.carrierName, 'J&T Express');
+      expect(restored.carrierUrl, 'https://example.com/track/JKE-4820-X1');
       // Timestamps go out as UTC and come back local. Comparing the instants
       // rather than the wall clock is the assertion that actually holds on a
       // device in a non-UTC timezone.
       expect(restored.createdAt.toUtc(), original.createdAt.toUtc());
+    });
+
+    test('an order without history reads back as empty', () {
+      final Order original = Order(
+        id: 'HL-2601-4820',
+        customerUid: 'u-marco',
+        lines: const <OrderLine>[
+          OrderLine(itemId: 'm-icedlatte', name: 'Iced Latte', price: 125, quantity: 1),
+        ],
+        status: OrderStatus.preparing,
+        fulfillment: Fulfillment.delivery,
+        paymentMethod: PaymentMethod.gcash,
+        createdAt: DateTime(2026, 10, 1, 9, 0),
+      );
+
+      // Documents written before status tracking never had the field at all.
+      final Order restored = OrderSerialisation.fromMap(original.toMap(), 'wrong-id');
+      expect(restored.statusHistory, isEmpty);
+
+      // ... and a corrupt history entry is skipped, not fatal: a stray object
+      // with no parseable timestamp must not drop the whole order.
+      final Map<String, dynamic> withGarbage = original.toMap()
+        ..['statusHistory'] = <Object>[
+          <String, Object>{'status': 'delivered', 'at': 'not-a-date'},
+          'garbage',
+        ];
+      final Order tolerant = OrderSerialisation.fromMap(withGarbage, 'wrong-id');
+      expect(tolerant.statusHistory, isEmpty);
+      expect(tolerant.status, OrderStatus.preparing);
     });
 
     test('a staff member keeps their shift', () {
