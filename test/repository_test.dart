@@ -14,7 +14,9 @@ import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/data/models/payment.dart';
 import 'package:highlanders_coffee/data/models/settings.dart';
+import 'package:highlanders_coffee/data/models/shift_event.dart';
 import 'package:highlanders_coffee/data/models/staff.dart';
+import 'package:highlanders_coffee/services/staff_qr.dart';
 import 'package:highlanders_coffee/state/admin_provider.dart';
 import 'package:highlanders_coffee/state/catalog_provider.dart';
 
@@ -250,6 +252,55 @@ void main() {
       expect(restored.shift, ShiftStatus.onDelivery);
       expect(restored.since, isNotNull);
       expect(restored.completedToday, 6);
+    });
+
+    test('a staff member keeps a minted badge token', () {
+      final StaffMember original = StaffMember(
+        id: 's-3',
+        name: 'Mara Ilagan',
+        role: StaffRole.barista,
+        shift: ShiftStatus.offShift,
+        qrToken: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+        qrIssuedAt: DateTime(2026, 10, 2, 9, 30),
+      );
+
+      final StaffMember restored = StaffMemberSerialisation.fromMap(original.toMap(), 'wrong-id');
+
+      expect(restored.qrToken, original.qrToken);
+      expect(restored.qrIssuedAt, isNotNull);
+    });
+
+    test('a tokenless staff member round-trips without inventing a badge', () {
+      const StaffMember original = StaffMember(
+        id: 's-1',
+        name: 'Aiko Ramos',
+        role: StaffRole.owner,
+        shift: ShiftStatus.onShift,
+      );
+
+      final StaffMember restored = StaffMemberSerialisation.fromMap(original.toMap(), 'wrong-id');
+
+      expect(restored.qrToken, isNull);
+      expect(original.toMap().containsKey('qrToken'), isFalse);
+    });
+
+    test('a shift event keeps its direction, time and method', () {
+      final ShiftEvent original = ShiftEvent(
+        id: 'ev-1',
+        staffId: 's-3',
+        staffName: 'Mara Ilagan',
+        type: ShiftEventType.clockOut,
+        at: DateTime(2026, 10, 3, 18, 5),
+        method: ShiftEventMethod.qr,
+      );
+
+      final ShiftEvent restored = ShiftEventSerialisation.fromMap(original.toMap(), 'wrong-id');
+
+      expect(restored.id, 'ev-1');
+      expect(restored.staffId, 's-3');
+      expect(restored.staffName, 'Mara Ilagan');
+      expect(restored.type, ShiftEventType.clockOut);
+      expect(restored.method, ShiftEventMethod.qr);
     });
 
     test('store settings keep the open flag and the fee', () {
@@ -743,6 +794,87 @@ void main() {
       );
     });
 
+    test('clocking a member by QR token flips the shift and logs the event', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.firstWhere((StaffMember s) => !s.shift.isWorking);
+
+      // Minting is the panel's job; the kiosk only ever reads a token.
+      await admin.ensureStaffQr(member.id);
+      final StaffMember withBadge = admin.staffById(member.id)!;
+      expect(withBadge.qrToken, isNotNull);
+
+      final Uri uri = staffQrUri(withBadge)!;
+      final StaffClockResult result = admin.clockByToken(uri.toString());
+
+      expect(result.outcome, StaffClockOutcome.clockedIn);
+      expect(admin.staffById(member.id)!.shift.isWorking, isTrue);
+
+      await settle();
+      final List<ShiftEvent> events = await repo.loadShiftEvents(member.id);
+      expect(events, hasLength(1));
+      expect(events.single.type, ShiftEventType.clockIn);
+      expect(events.single.staffId, member.id);
+      expect(events.single.method, ShiftEventMethod.qr);
+    });
+
+    test('a second scan clocks the same member out', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.firstWhere((StaffMember s) => !s.shift.isWorking);
+      await admin.ensureStaffQr(member.id);
+
+      final Uri uri = staffQrUri(admin.staffById(member.id)!)!;
+      expect(admin.clockByToken(uri.toString()).outcome, StaffClockOutcome.clockedIn);
+      expect(admin.clockByToken(uri.toString()).outcome, StaffClockOutcome.clockedOut);
+
+      await settle();
+      final List<ShiftEvent> events = await repo.loadShiftEvents(member.id);
+      expect(events.map((ShiftEvent e) => e.type), <ShiftEventType>[
+        ShiftEventType.clockOut,
+        ShiftEventType.clockIn,
+      ]);
+    });
+
+    test('regenerating a badge invalidates the old token', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.firstWhere((StaffMember s) => !s.shift.isWorking);
+
+      await admin.ensureStaffQr(member.id);
+      final Uri oldBadge = staffQrUri(admin.staffById(member.id)!)!;
+
+      await admin.regenerateStaffQr(member.id);
+      final StaffMember rotated = admin.staffById(member.id)!;
+      expect(rotated.qrToken, isNot(oldBadge.queryParameters['t']));
+
+      // The printed badge is dead the moment the token changes.
+      final StaffClockResult stale = admin.clockByToken(oldBadge.toString());
+      expect(stale.outcome, StaffClockOutcome.staleBadge);
+      expect(admin.staffById(member.id)!.shift.isWorking, isFalse);
+    });
+
+    test('a badge for someone not on the roster is refused', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+
+      final StaffClockResult unknown = admin.clockByToken(
+        staffQrUriFor(staffId: 's-ghost', token: 'deadbeef').toString(),
+      );
+      expect(unknown.outcome, StaffClockOutcome.unknownStaff);
+
+      expect(admin.clockByToken('https://example.test/not-a-badge').outcome,
+          StaffClockOutcome.notABadge);
+    });
+
     test('cancelling an order persists', () async {
       final MemoryShopRepository repo = MemoryShopRepository();
       addTearDown(repo.dispose);
@@ -978,6 +1110,7 @@ void main() {
         'settings',
         'orders',
         'staffMembers',
+        'shiftEvents',
         'drivers',
         'addresses',
         'paymentMethods',
@@ -993,6 +1126,7 @@ void main() {
         FirestorePaths.settings,
         FirestorePaths.orders,
         FirestorePaths.staffMembers,
+        FirestorePaths.shiftEvents,
         FirestorePaths.addresses,
         FirestorePaths.paymentMethods,
         FirestorePaths.paymentGatewayCustomers,

@@ -30,6 +30,14 @@ class FirestorePaths {
   /// Staff roster: baristas, riders, managers.
   static const String staffMembers = 'staffMembers';
 
+  /// Attendance log: one document per clock-in or clock-out.
+  ///
+  /// A flat collection with a `staffId` field rather than a subcollection under
+  /// the staff document. The panel reads one member's history with an equality
+  /// filter, which is the shape the rules and the rest of this layer already
+  /// use, and it keeps every collection name in one flat list to audit.
+  static const String shiftEvents = 'shiftEvents';
+
   /// Saved delivery addresses. Keyed by uid.
   static const String addresses = 'addresses';
 
@@ -72,4 +80,9 @@ class FirestorePaths {
 
   /// Staff document ids are the staff member's own slug.
   static String staffDoc(String staffId) => staffId;
+
+  /// Shift-event document ids are minted by the client
+  /// ([mintShiftEventId]) so both the Firestore and in-memory repositories key
+  /// on the same value.
+  static String shiftEventDoc(String eventId) => eventId;
 }

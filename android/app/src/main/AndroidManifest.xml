@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- Staff badge scanner. Declared not required so the app still installs on a
+         device without a camera; the scanner screen degrades to a message. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="Highlanders Coffee &amp; Tea"
         android:name="${applicationName}"

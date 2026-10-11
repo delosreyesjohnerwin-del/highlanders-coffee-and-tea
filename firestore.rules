@@ -158,6 +158,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // The attendance log the kiosk scanner appends to. Admin-only for the same
+    // reason as the roster: it is names and times, and no screen exists for a
+    // customer or a staff member to read it.
+    match /shiftEvents/{eventId} {
+      allow read, write: if isAdmin();
+    }
+
     // --- drivers ---------------------------------------------------------
     //
     // Kept for per-rider documents (live location, last seen). Distinct from

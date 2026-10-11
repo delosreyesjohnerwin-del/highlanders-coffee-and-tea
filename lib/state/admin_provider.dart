@@ -10,8 +10,10 @@ import '../data/models/coverage.dart';
 import '../data/models/menu.dart';
 import '../data/models/order.dart';
 import '../data/models/settings.dart';
+import '../data/models/shift_event.dart';
 import '../data/models/staff.dart';
 import '../services/in_app_alert.dart';
+import '../services/staff_qr.dart';
 
 /// One bar in the 7-day revenue chart.
 @immutable
@@ -312,7 +314,7 @@ class AdminProvider extends ChangeNotifier {
 
   // --- staff --------------------------------------------------------------
 
-  void setShift(String staffId, ShiftStatus shift) {
+  void setShift(String staffId, ShiftStatus shift, {ShiftEventMethod method = ShiftEventMethod.manual}) {
     final int i = _staff.indexWhere((StaffMember s) => s.id == staffId);
     if (i < 0) return;
 
@@ -327,6 +329,7 @@ class AdminProvider extends ChangeNotifier {
     _staff = <StaffMember>[..._staff]..[i] = next;
     notifyListeners();
     unawaited(_repository.saveStaffMember(next).then(_recordFailure));
+    _logShiftEvent(next, method);
   }
 
   /// Flips a member between on-shift and off-shift.
@@ -335,6 +338,114 @@ class AdminProvider extends ChangeNotifier {
     if (member == null) return;
     setShift(staffId, member.shift.isWorking ? ShiftStatus.offShift : ShiftStatus.onShift);
   }
+
+  /// Appends a clock-in/clock-out to the attendance log.
+  ///
+  /// The last timestamp handed to a shift event, so two clock actions in the
+  /// same millisecond still get a strict order.
+  ///
+  /// The device clock is coarse enough that a scan and its immediate repeat can
+  /// land on the identical instant, and a history sorted on `at` alone then has
+  /// no defined order — the clock-out can appear above the clock-in. Nudging the
+  /// stamp forward by a microsecond keeps the log monotonic and the timeline
+  /// readable, at a resolution no one can perceive.
+  DateTime _lastShiftEventAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// A strictly increasing event timestamp.
+  DateTime _nextShiftEventAt() {
+    final DateTime now = DateTime.now();
+    final DateTime next = now.isAfter(_lastShiftEventAt)
+        ? now
+        : _lastShiftEventAt.add(const Duration(microseconds: 1));
+    _lastShiftEventAt = next;
+    return next;
+  }
+
+  /// Written after the shift itself, and best-effort like every other write: a
+  /// failed history entry must not appear to fail the clock-in the operator just
+  /// watched succeed.
+  void _logShiftEvent(StaffMember member, ShiftEventMethod method) {
+    final ShiftEvent event = ShiftEvent(
+      id: mintShiftEventId(),
+      staffId: member.id,
+      staffName: member.name,
+      type: member.shift.isWorking ? ShiftEventType.clockIn : ShiftEventType.clockOut,
+      at: _nextShiftEventAt(),
+      method: method,
+    );
+    unawaited(_repository.saveShiftEvent(event).then(_recordFailure));
+  }
+
+  // --- staff badges -------------------------------------------------------
+
+  /// Gives [staffId] a badge token if they do not already have one.
+  ///
+  /// Lazy rather than a migration: a roster seeded before badges existed still
+  /// has valid staff with no token, and backfilling every document on first
+  /// launch would be a write storm for a feature nobody has opened. Called from
+  /// the badge widget, once, the first time it is built.
+  Future<void> ensureStaffQr(String staffId) async {
+    final int i = _staff.indexWhere((StaffMember s) => s.id == staffId);
+    if (i < 0) return;
+    final String? existing = _staff[i].qrToken;
+    if (existing != null && existing.isNotEmpty) return;
+
+    await _mintStaffQr(i);
+  }
+
+  /// Issues a brand-new token, invalidating any badge already printed.
+  Future<void> regenerateStaffQr(String staffId) async {
+    final int i = _staff.indexWhere((StaffMember s) => s.id == staffId);
+    if (i < 0) return;
+
+    await _mintStaffQr(i);
+  }
+
+  Future<void> _mintStaffQr(int index) async {
+    final StaffMember next = _staff[index].copyWith(
+      qrToken: mintStaffToken(),
+      qrIssuedAt: DateTime.now(),
+    );
+    _staff = <StaffMember>[..._staff]..[index] = next;
+    notifyListeners();
+    final WriteFailure? failure = await _repository.saveStaffMember(next);
+    _recordFailure(failure);
+  }
+
+  /// Resolves a scanned badge to a clock action.
+  ///
+  /// Verifies against the locally streamed roster, so the kiosk needs no extra
+  /// read and keeps working on a café's flaky connection. A successful clock
+  /// toggles the member between on-shift and off-shift, which is the whole point
+  /// of a single shared scanner: scan on the way in, scan on the way out.
+  StaffClockResult clockByToken(String raw) {
+    final StaffQrPayload? payload = parseStaffQr(raw);
+    if (payload == null) {
+      return const StaffClockResult(StaffClockOutcome.notABadge);
+    }
+
+    final StaffMember? member = staffById(payload.staffId);
+    if (member == null) {
+      return const StaffClockResult(StaffClockOutcome.unknownStaff);
+    }
+    if (!verifyStaffToken(member, payload.token)) {
+      return const StaffClockResult(StaffClockOutcome.staleBadge);
+    }
+
+    final bool nowWorking = !member.shift.isWorking;
+    setShift(member.id, nowWorking ? ShiftStatus.onShift : ShiftStatus.offShift,
+        method: ShiftEventMethod.qr);
+
+    return StaffClockResult(
+      nowWorking ? StaffClockOutcome.clockedIn : StaffClockOutcome.clockedOut,
+      staffName: member.name,
+      at: DateTime.now(),
+    );
+  }
+
+  /// One member's recent attendance, newest first.
+  Future<List<ShiftEvent>> loadShiftEvents(String staffId, {int limit = 20}) =>
+      _repository.loadShiftEvents(staffId, limit: limit);
 
   StaffMember? staffById(String id) {
     for (final StaffMember s in _staff) {

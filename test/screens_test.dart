@@ -9,6 +9,7 @@ import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
 import 'package:highlanders_coffee/features/admin/admin_dashboard_screen.dart';
 import 'package:highlanders_coffee/features/admin/sections/admin_overview_section.dart';
+import 'package:highlanders_coffee/features/admin/staff_qr_sheet.dart';
 import 'package:highlanders_coffee/features/checkout/checkout_screen.dart';
 import 'package:highlanders_coffee/features/home/widgets/menu_item_card.dart';
 import 'package:highlanders_coffee/features/home/widgets/promo_carousel.dart';
@@ -761,7 +762,7 @@ void main() {
       await scrollToEnd(tester, find.byType(ListView).first);
     });
 
-    testWidgets('staff section lists roles and toggles a shift',
+    testWidgets('staff section shows a QR badge per member and opens the badge sheet',
         (WidgetTester tester) async {
       await usePhone(tester);
       await pumpApp(tester, home: const AdminDashboardScreen(
@@ -775,19 +776,24 @@ void main() {
       expect(find.textContaining('All ('), findsOneWidget);
       expect(find.textContaining('Owner ('), findsOneWidget);
 
-      // The fixtures seed exactly one off-shift member, and as the last card in
-      // a lazily built list it does not exist until scrolled into view.
-      final Finder startShift = find.text('Start shift');
+      // The clock action is now the kiosk scanner, not a per-member button.
+      expect(find.text('Start shift'), findsNothing);
+      expect(find.text('Scan badge to clock in / out'), findsOneWidget);
 
-      await revealByDragging(tester, startShift, find.byType(ListView).last);
-      expect(startShift, findsOneWidget, reason: 'one member should be off shift');
+      // Each roster card carries a badge preview.
+      final Finder badge = find.byType(StaffQrThumbnail).first;
+      await revealByDragging(tester, badge, find.byType(ListView).last);
+      expect(badge, findsWidgets);
 
-      await tester.tap(startShift);
+      await tester.tap(badge);
       await tester.pumpAndSettle();
 
-      // That button became "End shift": every member now works.
-      expect(find.text('Start shift'), findsNothing);
-      expect(find.text('End shift'), findsWidgets);
+      // The modal offers the large badge plus export and rotation.
+      expect(find.text('Staff badge'), findsOneWidget);
+      expect(find.text('Download'), findsOneWidget);
+      expect(find.text('Print'), findsOneWidget);
+      expect(find.text('Regenerate QR'), findsOneWidget);
+      expect(find.text('Recent shifts'), findsOneWidget);
     });
 
     testWidgets('promos section lists promotions and pauses one',

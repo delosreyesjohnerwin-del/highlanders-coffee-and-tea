@@ -6,6 +6,7 @@ import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
 import '../models/settings.dart';
+import '../models/shift_event.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
 import 'shop_repository.dart';
@@ -227,6 +228,32 @@ class MemoryShopRepository implements ShopRepository {
     );
     _adminController.add(_admin);
     return null;
+  }
+
+  /// Attendance log, namespaced by staff id. Kept out of [AdminSnapshot]
+  /// deliberately: it is loaded per member on demand, not streamed as part of
+  /// the board.
+  final Map<String, List<ShiftEvent>> _shiftEventsByStaff = <String, List<ShiftEvent>>{};
+
+  @override
+  Future<WriteFailure?> saveShiftEvent(ShiftEvent event) async {
+    if (failWrites) return _maybeFail('log shift for ${event.staffName}');
+
+    final List<ShiftEvent> existing = _shiftEventsByStaff[event.staffId] ?? <ShiftEvent>[];
+    _shiftEventsByStaff[event.staffId] = <ShiftEvent>[
+      for (final ShiftEvent e in existing)
+        if (e.id == event.id) event else e,
+      if (!existing.any((ShiftEvent e) => e.id == event.id)) event,
+    ];
+    return null;
+  }
+
+  @override
+  Future<List<ShiftEvent>> loadShiftEvents(String staffId, {int limit = 20}) async {
+    final List<ShiftEvent> events =
+        List<ShiftEvent>.from(_shiftEventsByStaff[staffId] ?? const <ShiftEvent>[])
+          ..sort((ShiftEvent a, ShiftEvent b) => b.at.compareTo(a.at));
+    return events.take(limit).toList(growable: false);
   }
 
   // --- settings -----------------------------------------------------------

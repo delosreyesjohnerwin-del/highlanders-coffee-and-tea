@@ -9,6 +9,7 @@ import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
 import '../models/settings.dart';
+import '../models/shift_event.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
 import 'firestore_paths.dart';
@@ -320,6 +321,33 @@ class FirestoreShopRepository implements ShopRepository {
         'delete staff member $id',
         () => _collection(FirestorePaths.staffMembers).doc(FirestorePaths.staffDoc(id)).delete(),
       );
+
+  @override
+  Future<WriteFailure?> saveShiftEvent(ShiftEvent event) => _guard(
+        'log shift for ${event.staffName}',
+        () => _collection(FirestorePaths.shiftEvents)
+            .doc(FirestorePaths.shiftEventDoc(event.id))
+            .set(event.toMap()),
+      );
+
+  @override
+  Future<List<ShiftEvent>> loadShiftEvents(String staffId, {int limit = 20}) async {
+    // No `orderBy`: an equality filter plus a sort needs a composite index this
+    // project does not declare, and the resulting FAILED_PRECONDITION kills the
+    // query. The full filtered set is sorted by parsed `at` here instead — the
+    // same avoidance documented on [loadOrdersFor].
+    final QuerySnapshot<Map<String, dynamic>> snapshot = await _collection(FirestorePaths.shiftEvents)
+        .where('staffId', isEqualTo: staffId)
+        .get();
+
+    final List<ShiftEvent> events = snapshot.docs
+        .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+            ShiftEventSerialisation.fromMap(d.data(), d.id))
+        .toList()
+      ..sort((ShiftEvent a, ShiftEvent b) => b.at.compareTo(a.at));
+
+    return events.take(limit).toList(growable: false);
+  }
 
   // --- settings -----------------------------------------------------------
 

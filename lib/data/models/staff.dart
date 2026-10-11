@@ -52,6 +52,8 @@ class StaffMember {
     this.phone,
     this.since,
     this.completedToday = 0,
+    this.qrToken,
+    this.qrIssuedAt,
   });
 
   final String id;
@@ -67,10 +69,23 @@ class StaffMember {
   /// count.
   final int completedToday;
 
+  /// The opaque secret encoded into this member's badge QR.
+  ///
+  /// Minted lazily by the admin panel the first time a badge is displayed and
+  /// then persisted, so a roster seeded before badges existed gains one without
+  /// a migration. `null` means "no badge yet"; `regenerateStaffQr` replaces it,
+  /// which is the only way to revoke a printed badge.
+  final String? qrToken;
+
+  /// When [qrToken] was last (re)issued, so the panel can show an age.
+  final DateTime? qrIssuedAt;
+
   StaffMember copyWith({
     ShiftStatus? shift,
     int? completedToday,
     DateTime? since,
+    String? qrToken,
+    DateTime? qrIssuedAt,
   }) =>
       StaffMember(
         id: id,
@@ -80,5 +95,7 @@ class StaffMember {
         phone: phone,
         since: since ?? this.since,
         completedToday: completedToday ?? this.completedToday,
+        qrToken: qrToken ?? this.qrToken,
+        qrIssuedAt: qrIssuedAt ?? this.qrIssuedAt,
       );
 }

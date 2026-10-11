@@ -5,6 +5,7 @@ import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
 import '../models/settings.dart';
+import '../models/shift_event.dart';
 import '../models/staff.dart';
 
 /// Firestore (de)serialisation for the domain models.
@@ -419,6 +420,10 @@ extension StaffMemberSerialisation on StaffMember {
         if (phone != null) 'phone': phone,
         if (since != null) 'since': _date(since!),
         'completedToday': completedToday,
+        // Omitted while absent so a roster document written before badges
+        // existed reads back as "no badge" rather than an explicit empty string.
+        if (qrToken != null) 'qrToken': qrToken,
+        if (qrIssuedAt != null) 'qrIssuedAt': _date(qrIssuedAt!),
       };
 
   static StaffMember fromMap(Map<String, dynamic>? raw, String fallbackId) => StaffMember(
@@ -431,6 +436,33 @@ extension StaffMemberSerialisation on StaffMember {
         phone: _toStr(_body(raw)['phone']),
         since: _toDate(_body(raw)['since']),
         completedToday: _toInt(_body(raw)['completedToday']) ?? 0,
+        qrToken: _toStr(_body(raw)['qrToken']),
+        qrIssuedAt: _toDate(_body(raw)['qrIssuedAt']),
+      );
+}
+
+// --- ShiftEvent -----------------------------------------------------------
+
+extension ShiftEventSerialisation on ShiftEvent {
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'id': id,
+        'staffId': staffId,
+        'staffName': staffName,
+        'type': type.name,
+        'at': _date(at),
+        'method': method.name,
+      };
+
+  static ShiftEvent fromMap(Map<String, dynamic>? raw, String fallbackId) => ShiftEvent(
+        id: _toStr(_body(raw)['id']) ?? fallbackId,
+        staffId: _toStr(_body(raw)['staffId']) ?? '',
+        staffName: _toStr(_body(raw)['staffName']) ?? 'Staff',
+        type: _enumByName(_body(raw)['type'], ShiftEventType.values, ShiftEventType.clockIn,
+            labelOf: (ShiftEventType t) => t.label),
+        // A log entry with no usable timestamp is pinned to "now" rather than the
+        // epoch, so a damaged document sorts to the top instead of the bottom.
+        at: _toDate(_body(raw)['at']) ?? DateTime.now(),
+        method: _enumByName(_body(raw)['method'], ShiftEventMethod.values, ShiftEventMethod.qr),
       );
 }
 

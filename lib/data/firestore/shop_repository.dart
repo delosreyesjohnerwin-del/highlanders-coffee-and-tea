@@ -3,6 +3,7 @@ import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
 import '../models/settings.dart';
+import '../models/shift_event.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
 
@@ -56,6 +57,15 @@ abstract class ShopRepository {
   Future<WriteFailure?> saveStaffMember(StaffMember member);
 
   Future<WriteFailure?> deleteStaffMember(String id);
+
+  /// Appends one clock-in/clock-out to the attendance log.
+  ///
+  /// Append-only and keyed by the event's own id, so a re-send overwrites the
+  /// same document rather than duplicating an entry.
+  Future<WriteFailure?> saveShiftEvent(ShiftEvent event);
+
+  /// The most recent [limit] entries for one staff member, newest first.
+  Future<List<ShiftEvent>> loadShiftEvents(String staffId, {int limit = 20});
 
   // --- settings -----------------------------------------------------------
 

@@ -9,6 +9,8 @@ import '../../../core/widgets/bw_card.dart';
 import '../../../data/models/staff.dart';
 import '../../../state/admin_provider.dart';
 import '../admin_dashboard_screen.dart';
+import '../staff_qr_scanner.dart';
+import '../staff_qr_sheet.dart';
 import 'admin_overview_section.dart';
 
 /// Who is on the floor, what they can reach, and whether their shift is
@@ -84,6 +86,22 @@ class _AdminStaffSectionState extends State<AdminStaffSection> {
           ),
         ),
 
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            BwSpacing.gutter,
+            0,
+            BwSpacing.gutter,
+            BwSpacing.sm,
+          ),
+          child: BwButton(
+            label: 'Scan badge to clock in / out',
+            icon: Icons.qr_code_scanner_rounded,
+            variant: BwButtonVariant.outlined,
+            height: 46,
+            onPressed: () => openStaffQrScanner(context),
+          ),
+        ),
+
         Expanded(
           child: staff.isEmpty
               ? const AdminEmptyState(message: 'No staff in this role.', icon: Icons.badge_outlined)
@@ -111,8 +129,6 @@ class _StaffCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final AdminProvider admin = context.read<AdminProvider>();
-
     return BwCard(
       padding: const EdgeInsets.all(BwSpacing.md),
       child: Column(
@@ -228,16 +244,16 @@ class _StaffCard extends StatelessWidget {
                   ],
                 ),
               ),
-              BwButton(
-                label: member.shift.isWorking ? 'End shift' : 'Start shift',
-                variant: member.shift.isWorking
-                    ? BwButtonVariant.outlined
-                    : BwButtonVariant.solid,
-                height: 40,
-                // Sits beside the stat block, so it must size to content;
-                // `expand` would ask for an infinite width inside this Row.
-                expand: false,
-                onPressed: () => admin.toggleShift(member.id),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  StaffQrThumbnail(member: member),
+                  const SizedBox(height: 3),
+                  const Text(
+                    'Badge',
+                    style: TextStyle(fontSize: 10, color: BwColors.textMuted),
+                  ),
+                ],
               ),
             ],
           ),
