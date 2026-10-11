@@ -187,6 +187,16 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
+    // --- paymentGatewayCustomers -----------------------------------------
+    //
+    // Cache mapping each app user to their Xendit Customer id. Written only by
+    // the `linkPaymentMethod` Cloud Function through the admin SDK — clients
+    // never need it, so every client access is denied. Rules do not apply to
+    // admin-SDK writes, so the function keeps working.
+    match /paymentGatewayCustomers/{uid} {
+      allow read, write: if false;
+    }
+
     // Two "Home" entries is possible: the rules scope addresses by uid, not by
     // uniqueness of the label, and enforcing a single default would need a
     // transaction across every address document of a customer. `defaultAddress`

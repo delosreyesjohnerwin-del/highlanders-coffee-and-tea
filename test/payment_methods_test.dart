@@ -8,7 +8,19 @@ import 'package:highlanders_coffee/features/payment_methods/link_payment_screen.
 import 'package:highlanders_coffee/features/payment_methods/payment_methods_screen.dart';
 import 'package:highlanders_coffee/features/shell/app_shell.dart';
 import 'package:highlanders_coffee/features/shell/bw_bottom_nav.dart';
+import 'package:highlanders_coffee/services/payment_gateway.dart';
 import 'package:highlanders_coffee/state/session_provider.dart';
+
+/// A gateway whose link always fails, standing in for the real Cloud Function
+/// declining a payment method. Exercises the form's SnackBar error path.
+class _FailingGateway implements PaymentGateway {
+  const _FailingGateway();
+
+  @override
+  Future<PaymentLinkResult> link(PaymentLinkRequest request) async {
+    throw const GatewayException('The bank declined this account.');
+  }
+}
 
 /// The payment-methods feature: PH-mobile masking/validation, the session
 /// vault (default handling, set-default, unlink) and the Profile list + link
@@ -281,6 +293,32 @@ void main() {
       expect(find.text('**** **** 4242'), findsOneWidget);
       // The display-only brand guess is surfaced in the card's caption.
       expect(find.textContaining('Visa'), findsOneWidget);
+    });
+
+    testWidgets('a declined link surfaces the gateway message without leaving the form',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      // The injected gateway plays the real Cloud Function refusing the link;
+      // the form must stay put and show the provider's message in a SnackBar.
+      await pumpApp(
+        tester,
+        home: LinkPaymentScreen(gateway: const _FailingGateway()),
+      );
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Name on the account'),
+        'Marco Reyes',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'PH mobile number'),
+        '0917 123 4567',
+      );
+      await revealForTap(tester, find.text('Link payment method'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LinkPaymentScreen), findsOneWidget);
+      expect(find.text('The bank declined this account.'), findsOneWidget);
+      expect(find.byType(PaymentMethodsScreen), findsNothing);
     });
 
     testWidgets('set as default moves the badge to the chosen account',

@@ -1,0 +1,24 @@
+{
+  "name": "highlanders-functions",
+  "description": "Payment gateway bridge for Highlanders Coffee & Tea. Holds the Xendit secret key and calls Xendit's v2 API on the app's behalf.",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^6.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}

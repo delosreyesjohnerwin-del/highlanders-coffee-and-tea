@@ -936,6 +936,7 @@ void main() {
         'drivers',
         'addresses',
         'paymentMethods',
+        'paymentGatewayCustomers',
         'users',
       ];
 
@@ -948,6 +949,7 @@ void main() {
         FirestorePaths.staffMembers,
         FirestorePaths.addresses,
         FirestorePaths.paymentMethods,
+        FirestorePaths.paymentGatewayCustomers,
       ];
 
       for (final String name in used) {

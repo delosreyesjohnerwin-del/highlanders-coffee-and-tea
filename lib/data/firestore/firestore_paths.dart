@@ -36,6 +36,14 @@ class FirestorePaths {
   /// Linked payment methods. Keyed by uid.
   static const String paymentMethods = 'paymentMethods';
 
+  /// Cached Xendit customer mapping, keyed by uid.
+  ///
+  /// Written **only** by the `linkPaymentMethod` Cloud Function via the admin
+  /// SDK (it maps each app user to a Xendit `Customer` so reusable payment
+  /// methods attach to the right vault). Clients never read or write it; the
+  /// rules block denies everything.
+  static const String paymentGatewayCustomers = 'paymentGatewayCustomers';
+
   /// The one shop-settings document id.
   ///
   /// A single id means the app reads one document instead of running a

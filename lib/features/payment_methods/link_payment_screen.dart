@@ -20,7 +20,12 @@ import '../../state/session_provider.dart';
 /// `_link()` hands the full number to the [PaymentGateway]; the result is a
 /// masked [PaymentAccount] whose raw digits exist nowhere on disk.
 class LinkPaymentScreen extends StatefulWidget {
-  const LinkPaymentScreen({super.key});
+  const LinkPaymentScreen({super.key, this.gateway});
+
+  /// Injectable for tests; production builds fall back to the factory's
+  /// choice (mock offline, the real Cloud-Function-backed gateway when the
+  /// build opts in via `--dart-define=XENDIT_ENABLED=true`).
+  final PaymentGateway? gateway;
 
   @override
   State<LinkPaymentScreen> createState() => _LinkPaymentScreenState();
@@ -40,7 +45,7 @@ class _LinkPaymentScreenState extends State<LinkPaymentScreen> {
   final TextEditingController _email = TextEditingController();
   final TextEditingController _expiry = TextEditingController();
   final TextEditingController _cvc = TextEditingController();
-  final PaymentGateway _gateway = PaymentGatewayFactory.create();
+  late final PaymentGateway _gateway;
 
   late PaymentNetwork _network;
   late bool _isDefault;
@@ -49,6 +54,7 @@ class _LinkPaymentScreenState extends State<LinkPaymentScreen> {
   @override
   void initState() {
     super.initState();
+    _gateway = widget.gateway ?? PaymentGatewayFactory.create();
     _network = PaymentNetwork.gcash;
     _isDefault = false;
   }
@@ -128,14 +134,33 @@ class _LinkPaymentScreenState extends State<LinkPaymentScreen> {
     final SessionProvider session = context.read<SessionProvider>();
     final bool firstAccount = session.paymentAccounts.isEmpty;
 
-    final PaymentLinkResult result = await _gateway.link(PaymentLinkRequest(
-      network: _network,
-      holderName: _holder.text.trim(),
-      accountNumber: _number.text.trim(),
-      email: _network.isMobileWallet ? _email.text.trim() : null,
-      expiry: _network == PaymentNetwork.card ? _expiry.text.trim() : null,
-      cvc: _network == PaymentNetwork.card ? _cvc.text.trim() : null,
-    ));
+    final PaymentLinkResult result;
+    try {
+      result = await _gateway.link(PaymentLinkRequest(
+        network: _network,
+        holderName: _holder.text.trim(),
+        accountNumber: _number.text.trim(),
+        email: _network.isMobileWallet ? _email.text.trim() : null,
+        expiry: _network == PaymentNetwork.card ? _expiry.text.trim() : null,
+        cvc: _network == PaymentNetwork.card ? _cvc.text.trim() : null,
+      ));
+    } on GatewayException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(error.message)));
+      return;
+    } catch (_) {
+      // The real gateway already wraps failures; this is the belt-and-braces
+      // path in case a future implementation throws something unexpected.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('Could not link the payment method. Please try again.'),
+        ));
+      return;
+    }
     if (!mounted) return;
 
     final String email = _email.text.trim();
