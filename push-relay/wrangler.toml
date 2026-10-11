@@ -1,0 +1,24 @@
+# Highlanders Coffee & Tea — free push relay.
+#
+# Companion to `functions/` (the Blaze-plan path): a zero-dependency Worker
+# that polls Firestore once a minute and sends FCM pushes. Free on the
+# Cloudflare Workers Free plan; see FREE_PUSH.md for the setup walkthrough.
+name = "highlanders-push-relay"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Key-value store holding the polling checkpoint, per-order snapshots and the
+# cached Google access token.
+#
+# Created once with:
+#   npx wrangler kv namespace create PUSH_STATE
+# …which prints an id like `9f34a2b1c3d4e5f6a7b8c9d0e1f2a3b4`; paste it below.
+[[kv_namespaces]]
+binding = "PUSH_STATE"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
+
+# Run the relay once a minute — the fastest free-plan Cron Trigger allows.
+# There is no retry: a lost run costs nothing because the next tick resumes
+# from the same checkpoint.
+[triggers]
+crons = ["* * * * *"]

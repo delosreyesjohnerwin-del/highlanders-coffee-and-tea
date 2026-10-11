@@ -297,7 +297,7 @@ class FirestoreShopRepository implements ShopRepository {
 
     return _guard(
       'save order ${order.id}',
-      () => _collection(FirestorePaths.orders).doc(order.id).set(order.toMap()),
+      () => _collection(FirestorePaths.orders).doc(order.id).set(order.toMap()..['updatedAt'] = FieldValue.serverTimestamp()),
     );
   }
 
@@ -346,7 +346,7 @@ class FirestoreShopRepository implements ShopRepository {
   @override
   Future<WriteFailure?> createOrder(Order order) => _guard(
         'place order ${order.id}',
-        () => _collection(FirestorePaths.orders).doc(order.id).set(order.toMap()),
+        () => _collection(FirestorePaths.orders).doc(order.id).set(order.toMap()..['updatedAt'] = FieldValue.serverTimestamp()),
       );
 
   @override

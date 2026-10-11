@@ -110,12 +110,18 @@ class _HighlandersAppState extends State<HighlandersApp> {
           )..init(),
         ),
       ],
-      child: MaterialApp(
-        title: 'Highlanders Coffee & Tea',
-        debugShowCheckedModeBanner: false,
-        theme: BwTheme.build(),
-        navigatorKey: _navigatorKey,
-        home: widget.home ?? const AppShell(),
+      child: Builder(
+        builder: (BuildContext context) {
+          final admin = context.read<AdminProvider>();
+          admin.attachContext(context);
+          return MaterialApp(
+            title: 'Highlanders Coffee & Tea',
+            debugShowCheckedModeBanner: false,
+            theme: BwTheme.build(),
+            navigatorKey: _navigatorKey,
+            home: widget.home ?? const AppShell(),
+          );
+        },
       ),
     );
   }

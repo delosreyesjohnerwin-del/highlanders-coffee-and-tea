@@ -13,6 +13,7 @@ class BwMenuRow extends StatelessWidget {
     required this.label,
     this.onTap,
     this.trailingText,
+    this.trailing,
     this.showChevron = true,
     this.danger = false,
   });
@@ -21,6 +22,7 @@ class BwMenuRow extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final String? trailingText;
+  final Widget? trailing;
   final bool showChevron;
 
   /// Reserved for future destructive actions; kept monochrome.
@@ -58,7 +60,12 @@ class BwMenuRow extends StatelessWidget {
                   ),
                 ),
               ),
-              if (trailingText != null)
+              if (trailing != null)
+                Padding(
+                  padding: const EdgeInsets.only(right: BwSpacing.xs),
+                  child: trailing!,
+                )
+              else if (trailingText != null)
                 Padding(
                   padding: const EdgeInsets.only(right: BwSpacing.xs),
                   child: Text(

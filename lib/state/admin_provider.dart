@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/firestore/firestore_errors.dart';
 import '../data/firestore/memory_shop_repository.dart';
@@ -101,6 +102,11 @@ class AdminProvider extends ChangeNotifier {
     );
   }
 
+  /// Binds the navigator context so in-app alerts can be shown.
+  void attachContext(BuildContext context) {
+    _context = context;
+  }
+
   /// The failure to show, and clears it.
   WriteFailure? consumeFailure() {
     final WriteFailure? failure = _failure;
@@ -131,6 +137,8 @@ class AdminProvider extends ChangeNotifier {
     opensAt: '7:00 AM',
     closesAt: '10:00 PM',
   );
+
+  BuildContext? _context;
 
   List<Order> get orders => _orders;
   List<StaffMember> get staff => _staff;
@@ -188,7 +196,7 @@ class AdminProvider extends ChangeNotifier {
     final Order next = _copyWithStatus(_orders[i], pipeline[step + 1]);
     _orders = <Order>[..._orders]..[i] = next;
     notifyListeners();
-
+    _showLocalInAppAlert(_orders[i], pipeline[step + 1]);
     // `unawaited`: the caller is a button handler that must return a bool
     // synchronously for the UI's enabled/disabled logic. The write failure is
     // recorded instead of thrown — see _recordFailure.
@@ -204,6 +212,7 @@ class AdminProvider extends ChangeNotifier {
     final Order next = _copyWithStatus(_orders[i], OrderStatus.cancelled);
     _orders = <Order>[..._orders]..[i] = next;
     notifyListeners();
+    _showLocalInAppAlert(_orders[i], next.status);
     unawaited(_repository.saveOrder(next).then(_recordFailure));
   }
 
@@ -259,6 +268,7 @@ class AdminProvider extends ChangeNotifier {
       fulfillment: o.fulfillment,
       paymentMethod: o.paymentMethod,
       createdAt: o.createdAt,
+      updatedAt: o.updatedAt,
       subtotal: o.subtotal,
       deliveryFee: o.deliveryFee,
       distanceKm: o.distanceKm,
@@ -274,6 +284,43 @@ class AdminProvider extends ChangeNotifier {
       carrierName: o.carrierName,
       carrierUrl: o.carrierUrl,
     );
+  }
+
+  void _showLocalInAppAlert(Order order, OrderStatus status) {
+    final BuildContext? context = _context;
+    if (context == null) return;
+    try {
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+      messenger.hideCurrentSnackBar();
+      final String body = _statusCopy(status, order);
+      if (body.isEmpty) return;
+      unawaited(HapticFeedback.lightImpact());
+      messenger.showSnackBar(SnackBar(content: Text(body)));
+    } catch (_) {
+      return;
+    }
+  }
+
+  static String _statusCopy(OrderStatus status, Order order) {
+    switch (status) {
+      case OrderStatus.pending:
+        return 'Order received';
+      case OrderStatus.confirmed:
+        return 'Order confirmed';
+      case OrderStatus.preparing:
+        return 'Order is being prepared';
+      case OrderStatus.ready:
+        return order.fulfillment == Fulfillment.pickup ? 'Ready for pickup' : 'Ready';
+      case OrderStatus.outForDelivery:
+        return 'Out for delivery';
+      case OrderStatus.delivered:
+        return 'Order delivered — enjoy!';
+      case OrderStatus.failedDelivery:
+        return 'Delivery failed — contact the customer';
+      case OrderStatus.cancelled:
+        return 'Order cancelled';
+    }
   }
 
   // --- staff --------------------------------------------------------------

@@ -322,6 +322,10 @@ extension OrderSerialisation on Order {
         'fulfillment': fulfillment.name,
         'paymentMethod': paymentMethod.name,
         'createdAt': _date(createdAt),
+        // Written to Firestore as `FieldValue.serverTimestamp()` at save time;
+        // the model's own value exists so memory storage and round-trips stay
+        // self-consistent. Omitted when null, so legacy orders stay untouched.
+        if (updatedAt != null) 'updatedAt': _date(updatedAt!),
         'subtotal': subtotal.toDouble(),
         'deliveryFee': deliveryFee.toDouble(),
         if (distanceKm != null) 'distanceKm': distanceKm,
@@ -359,6 +363,7 @@ extension OrderSerialisation on Order {
         // A missing createdAt would sort to the epoch and pin the order to the
         // bottom of every "newest first" list, so it falls back to now.
         createdAt: _toDate(_body(raw)['createdAt']) ?? DateTime.now(),
+        updatedAt: _toDate(_body(raw)['updatedAt']),
         subtotal: _toNum(_body(raw)['subtotal']) ?? 0,
         deliveryFee: _toNum(_body(raw)['deliveryFee']) ?? 0,
         distanceKm: _toDouble(_body(raw)['distanceKm']),

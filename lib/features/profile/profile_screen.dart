@@ -8,6 +8,7 @@ import '../../core/widgets/bw_button.dart';
 import '../../core/widgets/bw_menu_row.dart';
 import '../../core/widgets/bw_stat.dart';
 import '../../data/models/order.dart';
+import '../../services/notification_service.dart';
 import '../../state/session_provider.dart';
 import '../address/saved_addresses_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
@@ -81,7 +82,27 @@ class ProfileScreen extends StatelessWidget {
                       BwMenuRow(
                         icon: Icons.notifications_none_rounded,
                         label: 'Notifications',
-                        onTap: () => _notReady(context, 'Notifications'),
+                        trailing: Switch(
+                          value: context.watch<NotificationService>().isEnabled,
+                          onChanged: (bool value) async {
+                            final NotificationService n =
+                                context.read<NotificationService>();
+                            if (value) {
+                              await n.enable();
+                            } else {
+                              await n.disable();
+                            }
+                          },
+                        ),
+                        onTap: () async {
+                          final NotificationService n =
+                              context.read<NotificationService>();
+                          if (n.isEnabled) {
+                            await n.disable();
+                          } else {
+                            await n.enable();
+                          }
+                        },
                       ),
                       BwMenuRow(
                         icon: Icons.star_outline_rounded,

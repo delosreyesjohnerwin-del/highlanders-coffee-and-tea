@@ -255,7 +255,31 @@ class SessionProvider extends ChangeNotifier {
   /// order vanished because the phone lost signal would be worse than showing a
   /// retryable warning. The failure is recorded for the UI to surface.
   void placeOrder(Order order) {
-    _orders = <Order>[order, ..._orders];
+    final Order next = Order(
+      id: order.id,
+      customerUid: order.customerUid,
+      lines: order.lines,
+      status: order.status,
+      fulfillment: order.fulfillment,
+      paymentMethod: order.paymentMethod,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      subtotal: order.subtotal,
+      deliveryFee: order.deliveryFee,
+      distanceKm: order.distanceKm,
+      address: order.address,
+      customerName: order.customerName,
+      pickupCode: order.pickupCode,
+      driverName: order.driverName,
+      driverPhone: order.driverPhone,
+      paymentRef: order.paymentRef,
+      promoCode: order.promoCode,
+      statusHistory: order.statusHistory,
+      trackingNumber: order.trackingNumber,
+      carrierName: order.carrierName,
+      carrierUrl: order.carrierUrl,
+    );
+    _orders = <Order>[next, ..._orders];
     notifyListeners();
 
     final ShopRepository? repo = _repository;
@@ -274,6 +298,7 @@ class SessionProvider extends ChangeNotifier {
                 fulfillment: o.fulfillment,
                 paymentMethod: o.paymentMethod,
                 createdAt: o.createdAt,
+                updatedAt: o.updatedAt,
                 subtotal: o.subtotal,
                 deliveryFee: o.deliveryFee,
                 distanceKm: o.distanceKm,

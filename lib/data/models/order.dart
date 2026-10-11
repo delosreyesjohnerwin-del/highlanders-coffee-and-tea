@@ -139,6 +139,7 @@ class Order {
     required this.fulfillment,
     required this.paymentMethod,
     required this.createdAt,
+    this.updatedAt,
     this.subtotal = 0,
     this.deliveryFee = 0,
     this.distanceKm,
@@ -176,6 +177,16 @@ class Order {
   final Fulfillment fulfillment;
   final PaymentMethod paymentMethod;
   final DateTime createdAt;
+
+  /// When the document was last written, set server-side.
+  ///
+  /// Differs from [createdAt] (a client timestamp frozen at order time): this
+  /// moves on every save, so the backend can detect "this order changed since I
+  /// last looked". Null for orders written before this field existed — they are
+  /// invisible to incremental polling by design, which means backfilled history
+  /// never triggers notifications.
+  final DateTime? updatedAt;
+
   final num subtotal;
   final num deliveryFee;
   final double? distanceKm;

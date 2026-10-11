@@ -1,5 +1,13 @@
 # Push notifications — going real
 
+> **Two ways to run this loop.** The Cloud Functions in `functions/` are the
+> full-latency path and need the Firebase **Blaze** plan (the free Spark plan
+> cannot run functions). If the project is still on the free plan, use the
+> **free Cloudflare relay** in `push-relay/` instead — see `FREE_PUSH.md`. The
+> loop, the message copy and the hygiene are identical; only the triggering
+> mechanism (Firestore event vs 1-minute poll) differs. Prefer this file once
+> the project is upgraded to Blaze.
+
 This is the runbook for turning on the push-notification loop end to end. The
 code is already in place; these are the steps that make pushes actually travel
 from the shop to a phone.

@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/firebase/firebase_bootstrap.dart';
@@ -172,6 +173,74 @@ class NotificationService extends ChangeNotifier {
     if (initial != null) _handleMessage(initial);
   }
 
+  bool get isEnabled =>
+      _backend.isAvailable &&
+      _registeredUid != null &&
+      _session.isSignedIn &&
+      _registeredUid == _session.user.uid &&
+      _registeredToken != null;
+
+  /// Requests notification permission and registers the device token for the
+  /// currently signed-in user. If the user is not signed in, this will still
+  /// request permission but will not register a token.
+  Future<void> enable() async {
+    if (!_backend.isAvailable) return;
+
+    try {
+      await _backend.requestPermission();
+    } catch (error) {
+      debugPrint('notification permission request failed: $error');
+    }
+
+    if (!_session.isSignedIn) return;
+    final String uid = _session.user.uid;
+    _registeredUid = uid;
+    await _registerToken(uid);
+    notifyListeners();
+  }
+
+  /// Unregisters the current device token and stops receiving push
+  /// notifications on this device.
+  Future<void> disable() async {
+    final String? uid = _registeredUid;
+    if (uid == null && _session.isSignedIn) {
+      // Attempt to unregister using current session uid if available.
+      final String currentUid = _session.user.uid;
+      final String? token = _registeredToken;
+      _registeredUid = null;
+      _registeredToken = null;
+      notifyListeners();
+      if (token != null) {
+        try {
+          final WriteFailure? failure =
+              await _repository.deleteNotificationToken(currentUid, token);
+          if (failure != null) {
+            debugPrint('notification token unregister skipped: ${failure.message}');
+          }
+        } catch (error) {
+          debugPrint('notification token unregister failed: $error');
+        }
+      }
+      return;
+    }
+
+    final String? token = _registeredToken;
+    _registeredUid = null;
+    _registeredToken = null;
+    notifyListeners();
+    if (uid == null || token == null) return;
+
+    try {
+      final WriteFailure? failure =
+          await _repository.deleteNotificationToken(uid, token);
+      if (failure != null) {
+        debugPrint('notification token unregister skipped: ${failure.message}');
+      }
+    } catch (error) {
+      debugPrint('notification token unregister failed: $error');
+    }
+  }
+
   /// Routes a notification tap to its screen. Public so tests can drive the
   /// same code the message streams call.
   void open(NotificationTap tap) => _routeTo(tap);
@@ -253,6 +322,7 @@ class NotificationService extends ChangeNotifier {
     final BuildContext? context = _navigatorKey.currentContext;
     if (context == null) return;
     final String body = message.notification?.body ?? 'Order update';
+    unawaited(HapticFeedback.lightImpact());
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(body)));
