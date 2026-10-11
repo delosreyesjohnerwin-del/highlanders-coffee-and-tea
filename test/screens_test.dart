@@ -16,6 +16,7 @@ import 'package:highlanders_coffee/features/home/widgets/promo_widgets.dart';
 import 'package:highlanders_coffee/features/menu/menu_item_detail_screen.dart';
 import 'package:highlanders_coffee/features/order_tracking/order_success_screen.dart';
 import 'package:highlanders_coffee/features/order_tracking/order_tracking_screen.dart';
+import 'package:highlanders_coffee/features/orders/orders_screen.dart';
 import 'package:highlanders_coffee/features/shell/app_shell.dart';
 import 'package:highlanders_coffee/features/shell/bw_bottom_nav.dart';
 
@@ -436,6 +437,155 @@ void main() {
 
       expect(find.text('J&T Express · #JKE-9002-L'), findsOneWidget);
       expect(find.text('Track'), findsOneWidget);
+    });
+  });
+
+  group('order cards', () {
+    testWidgets('details expand on the chevron and collapse again',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      await tapTab(tester, 'Orders');
+
+      // The seeded active order carries a promo, a free delivery fee and a
+      // nearby home address — every breakdown row is exercised.
+      Finder chew() => find.descendant(
+            of: find.byKey(const Key('order-chevron-HL-2601-6372')),
+            matching: find.byType(AnimatedRotation),
+          );
+
+      // Collapsed by default: chevron points down and the details are not in
+      // the tree yet.
+      expect(tester.widget<AnimatedRotation>(chew()).turns, 0);
+      expect(find.text('Highlanders Breakfast Tray'), findsNothing);
+      expect(find.text('Total'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('order-chevron-HL-2601-6372')));
+      await tester.pumpAndSettle();
+
+      // Chevron turned 180° and the summary is still visible above the panel.
+      expect(tester.widget<AnimatedRotation>(chew()).turns, 0.5);
+
+      // Items with quantity × unit price and a line subtotal.
+      expect(find.text('Highlanders Breakfast Tray'), findsOneWidget);
+      expect(find.text('1 × ₱245.00'), findsOneWidget);
+
+      // Delivery recipient + full address.
+      expect(find.text('Recipient'), findsOneWidget);
+      expect(find.text('Marco Reyes'), findsOneWidget);
+      expect(find.text('123 Poblacion Road, Santo Niño'), findsOneWidget);
+      expect(find.text('900 m from the café'), findsOneWidget);
+
+      // Payment breakdown: method with PAID badge, subtotal, free fee, promo.
+      expect(find.text('GCash'), findsOneWidget);
+      expect(find.text('PAID'), findsOneWidget);
+      expect(find.text('Subtotal'), findsOneWidget);
+      expect(find.text('Delivery fee'), findsOneWidget);
+      expect(find.text('Free'), findsOneWidget);
+      expect(find.text('DAMPOTIST'), findsOneWidget);
+      expect(find.text('Total'), findsOneWidget);
+
+      // Status progress strip is rendered.
+      expect(find.byKey(const Key('order-progress-HL-2601-6372')), findsOneWidget);
+
+      // Tap the chevron again: everything unmounts back to the summary.
+      await tester.tap(find.byKey(const Key('order-chevron-HL-2601-6372')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<AnimatedRotation>(chew()).turns, 0);
+      expect(find.text('Highlanders Breakfast Tray'), findsNothing);
+      expect(find.text('Total'), findsNothing);
+    });
+
+    testWidgets('expanding one card collapses the other (exclusive)',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester);
+
+      await tapTab(tester, 'Orders');
+      await tester.tap(find.text('past'));
+      await tester.pumpAndSettle();
+
+      Finder chew4820() => find.descendant(
+            of: find.byKey(const Key('order-chevron-HL-2601-4820')),
+            matching: find.byType(AnimatedRotation),
+          );
+
+      expect(find.text('Total'), findsNothing);
+      expect(find.text('Iced Latte'), findsNothing);
+
+      // Expand the SECOND card first so the first card — the one we'll tap
+      // next — stays visible at the top of the list.
+      await tester.tap(find.byKey(const Key('order-chevron-HL-2601-5155')));
+      await tester.pumpAndSettle();
+      expect(find.text('Total'), findsOneWidget);
+      expect(find.text('Cold Brew'), findsOneWidget);
+      expect(find.text('Creamy Carbonara'), findsOneWidget);
+      expect(tester.widget<AnimatedRotation>(chew4820()).turns, 0);
+
+      // Expanding the first card must push the second one shut.
+      await tester.tap(find.byKey(const Key('order-chevron-HL-2601-4820')));
+      await tester.pumpAndSettle();
+      expect(find.text('Total'), findsOneWidget, reason: 'only one card may be open');
+      expect(tester.widget<AnimatedRotation>(chew4820()).turns, 0.5);
+      expect(find.text('Iced Latte'), findsOneWidget);
+      expect(find.text('Butter Croissant'), findsOneWidget);
+      expect(find.text('Cold Brew'), findsNothing);
+
+      // And the winner can be collapsed back down on its own.
+      await tester.tap(find.byKey(const Key('order-chevron-HL-2601-4820')));
+      await tester.pumpAndSettle();
+      expect(find.text('Total'), findsNothing);
+      expect(find.text('Iced Latte'), findsNothing);
+    });
+
+    testWidgets('expanded card shows recorded status history timestamps',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      final DateTime placedAt = DateTime(2026, 10, 2, 9, 0);
+      final Order delivered = Order(
+        id: 'HL-TEST-9010',
+        customerUid: 'u-selftest',
+        lines: const <OrderLine>[
+          OrderLine(itemId: 'm-icedlatte', name: 'Iced Latte', price: 125, quantity: 1),
+        ],
+        status: OrderStatus.delivered,
+        fulfillment: Fulfillment.delivery,
+        paymentMethod: PaymentMethod.gcash,
+        createdAt: placedAt,
+        subtotal: 125,
+        deliveryFee: 25,
+        statusHistory: <OrderStatusEvent>[
+          OrderStatusEvent(status: OrderStatus.pending, at: placedAt),
+          OrderStatusEvent(
+            status: OrderStatus.delivered,
+            at: DateTime(2026, 10, 2, 9, 45),
+          ),
+        ],
+      );
+
+      await pumpApp(tester, home: _ExpandableCardHost(order: delivered));
+
+      expect(find.text('Subtotal'), findsNothing);
+
+      await tester.tap(find.text('expand'));
+      await tester.pumpAndSettle();
+
+      // Item row carries quantity × unit price.
+      expect(find.text('Iced Latte'), findsOneWidget);
+      expect(find.text('1 × ₱125.00'), findsOneWidget);
+
+      // The recorded arrival time shows under the pipeline label.
+      expect(find.text(Fmt.dateTime(DateTime(2026, 10, 2, 9, 45))), findsOneWidget);
+      expect(find.byKey(const Key('order-progress-HL-TEST-9010')), findsOneWidget);
+
+      // Payment breakdown totals the lines and the fee.
+      expect(find.text('Subtotal'), findsOneWidget);
+      expect(find.text('Delivery fee'), findsOneWidget);
+      expect(find.text('₱25.00'), findsOneWidget);
+      expect(find.text('Total'), findsOneWidget);
+      expect(find.text('₱150.00'), findsOneWidget);
     });
   });
 
@@ -874,4 +1024,40 @@ void main() {
       }
     });
   });
+}
+
+/// Mounts a single [OrderCard] under the app's provider graph so tests can
+/// hand it a fixture the seeded session does not contain (e.g. one carrying
+/// recorded status history).
+class _ExpandableCardHost extends StatefulWidget {
+  const _ExpandableCardHost({required this.order});
+
+  final Order order;
+
+  @override
+  State<_ExpandableCardHost> createState() => _ExpandableCardHostState();
+}
+
+class _ExpandableCardHostState extends State<_ExpandableCardHost> {
+  bool _expanded = false;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: <Widget>[
+          TextButton(onPressed: _toggle, child: const Text('expand')),
+          OrderCard(
+            order: widget.order,
+            expanded: _expanded,
+            onToggle: _toggle,
+            showReorder: false,
+          ),
+        ],
+      ),
+    );
+  }
 }

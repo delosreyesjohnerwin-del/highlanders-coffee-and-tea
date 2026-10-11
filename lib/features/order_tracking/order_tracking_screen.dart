@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/bw_colors.dart';
 import '../../core/theme/bw_metrics.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/order_progress.dart';
 import '../../core/widgets/bw_accordion.dart';
 import '../../core/widgets/bw_badge.dart';
 import '../../core/widgets/bw_button.dart';
@@ -20,15 +21,6 @@ class OrderTrackingScreen extends StatelessWidget {
 
   final Order order;
 
-  static const List<OrderStatus> _pipeline = <OrderStatus>[
-    OrderStatus.pending,
-    OrderStatus.confirmed,
-    OrderStatus.preparing,
-    OrderStatus.ready,
-    OrderStatus.outForDelivery,
-    OrderStatus.delivered,
-  ];
-
   @override
   Widget build(BuildContext context) {
     // Always prefer the live copy from the session.
@@ -37,7 +29,7 @@ class OrderTrackingScreen extends StatelessWidget {
     );
     final Order current = live ?? order;
     final bool pickup = current.fulfillment == Fulfillment.pickup;
-    final int currentStep = _stepIndex(current.status);
+    final int currentStep = orderStepIndex(current.status);
 
     return Scaffold(
       appBar: AppBar(
@@ -90,16 +82,16 @@ class OrderTrackingScreen extends StatelessWidget {
               dense: true,
             ),
             children: <Widget>[
-              ...List<Widget>.generate(_pipeline.length, (int i) {
+              ...List<Widget>.generate(orderPipeline.length, (int i) {
                 final bool done = i <= currentStep;
-                final bool isLast = i == _pipeline.length - 1;
+                final bool isLast = i == orderPipeline.length - 1;
 
                 return _StepRow(
-                  label: _stepLabel(_pipeline[i], pickup: pickup),
+                  label: orderStepLabel(orderPipeline[i], pickup: pickup),
                   done: done,
                   isLast: isLast,
                   isCurrent: i == currentStep,
-                  at: _stepTime(current, _pipeline[i], done),
+                  at: _stepTime(current, orderPipeline[i], done),
                 );
               }),
               if (current.trackingNumber != null) ...<Widget>[
@@ -257,12 +249,6 @@ class OrderTrackingScreen extends StatelessWidget {
     );
   }
 
-  static int _stepIndex(OrderStatus status) {
-    if (status == OrderStatus.cancelled || status == OrderStatus.failedDelivery) return 0;
-    final int i = _pipeline.indexOf(status);
-    return i < 0 ? 0 : i;
-  }
-
   /// The timestamp to show under [step], or null when it has none.
   ///
   /// Completed steps carry their recorded history time. Steps before status
@@ -271,22 +257,7 @@ class OrderTrackingScreen extends StatelessWidget {
   static DateTime? _stepTime(Order order, OrderStatus step, bool done) {
     if (!done) return null;
     return order.enteredAt(step) ??
-        (step == _pipeline.first ? order.createdAt : null);
-  }
-
-  static String _stepLabel(OrderStatus status, {required bool pickup}) {
-    if (pickup) {
-      return switch (status) {
-        OrderStatus.pending => 'Order received',
-        OrderStatus.confirmed => 'Confirmed',
-        OrderStatus.preparing => 'Being prepared',
-        OrderStatus.ready => 'Ready for pickup',
-        OrderStatus.outForDelivery => 'Handed over',
-        OrderStatus.delivered => 'Collected',
-        _ => status.label,
-      };
-    }
-    return status.label;
+        (step == orderPipeline.first ? order.createdAt : null);
   }
 }
 
