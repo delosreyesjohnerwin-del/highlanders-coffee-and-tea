@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/menu.dart';
 import '../models/order.dart';
+import '../models/payment.dart';
 import '../models/staff.dart';
 
 /// Seed data used before Firebase is wired up, and as the reference fixture
@@ -176,6 +177,31 @@ class MockData {
       label: 'Work',
       street: '45 Dagatan Street',
       barangayCode: 'lumban-wawa',
+    ),
+  ];
+
+  // Not const: the link dates are fixed literals for reproducible fixtures,
+  // and DateTime has no const constructor.
+  static final List<PaymentAccount> paymentAccounts = <PaymentAccount>[
+    PaymentAccount(
+      id: 'pm-gcash',
+      network: PaymentNetwork.gcash,
+      holderName: 'Marco Reyes',
+      accountLabel: '0917****000',
+      tail: '0000',
+      email: 'marco.reyes@email.com',
+      isDefault: true,
+      linkedAt: DateTime(2026, 9, 2),
+      gatewayId: 'mock-pm-1001',
+    ),
+    PaymentAccount(
+      id: 'pm-maya',
+      network: PaymentNetwork.maya,
+      holderName: 'Marco Reyes',
+      accountLabel: '0917****123',
+      tail: '3123',
+      linkedAt: DateTime(2026, 9, 19),
+      gatewayId: 'mock-pm-1002',
     ),
   ];
 

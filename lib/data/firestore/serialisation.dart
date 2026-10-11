@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
+import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/staff.dart';
 
@@ -454,5 +455,40 @@ extension SavedAddressSerialisation on SavedAddress {
         // fallback keeps pricing them.
         lat: _toDouble(_body(raw)['lat']),
         lng: _toDouble(_body(raw)['lng']),
+      );
+}
+
+// --- PaymentAccount -------------------------------------------------------
+
+extension PaymentAccountSerialisation on PaymentAccount {
+  Map<String, dynamic> toMap({required String uid}) => <String, dynamic>{
+        'id': id,
+        'uid': uid,
+        'network': network.name,
+        'holderName': holderName,
+        // Only the mask is stored — never the full number. See the model doc.
+        'accountLabel': accountLabel,
+        'tail': tail,
+        if (email != null) 'email': email,
+        'isDefault': isDefault,
+        'linkedAt': _date(linkedAt),
+        if (gatewayId != null) 'gatewayId': gatewayId,
+        if (cardBrand != null) 'cardBrand': cardBrand,
+      };
+
+  static PaymentAccount fromMap(Map<String, dynamic>? raw, String fallbackId) => PaymentAccount(
+        id: _toStr(_body(raw)['id']) ?? fallbackId,
+        network: _enumByName(_body(raw)['network'], PaymentNetwork.values, PaymentNetwork.gcash,
+            labelOf: (PaymentNetwork n) => n.label),
+        holderName: _toStr(_body(raw)['holderName']) ?? 'Account holder',
+        accountLabel: _toStr(_body(raw)['accountLabel']) ?? '',
+        tail: _toStr(_body(raw)['tail']) ?? '',
+        email: _toStr(_body(raw)['email']),
+        isDefault: _toBool(_body(raw)['isDefault']) ?? false,
+        // A missing link date would sort the account to the top of nothing and
+        // show "Linked epoch" — fall back to now instead.
+        linkedAt: _toDate(_body(raw)['linkedAt']) ?? DateTime.now(),
+        gatewayId: _toStr(_body(raw)['gatewayId']),
+        cardBrand: _toStr(_body(raw)['cardBrand']),
       );
 }

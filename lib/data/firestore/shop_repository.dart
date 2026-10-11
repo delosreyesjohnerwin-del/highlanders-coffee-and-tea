@@ -1,6 +1,7 @@
 import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
+import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
@@ -80,6 +81,14 @@ abstract class ShopRepository {
   Future<List<SavedAddress>> loadAddresses(String uid);
 
   Stream<List<SavedAddress>> watchAddresses(String uid);
+
+  Future<WriteFailure?> savePaymentAccount(String uid, PaymentAccount account);
+
+  Future<WriteFailure?> deletePaymentAccount(String uid, String accountId);
+
+  Future<List<PaymentAccount>> loadPaymentAccounts(String uid);
+
+  Stream<List<PaymentAccount>> watchPaymentAccounts(String uid);
 
   // --- seed ---------------------------------------------------------------
 

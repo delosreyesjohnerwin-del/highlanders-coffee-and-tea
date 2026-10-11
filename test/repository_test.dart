@@ -12,6 +12,7 @@ import 'package:highlanders_coffee/data/mock/mock_data.dart';
 import 'package:highlanders_coffee/data/models/coverage.dart';
 import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
+import 'package:highlanders_coffee/data/models/payment.dart';
 import 'package:highlanders_coffee/data/models/settings.dart';
 import 'package:highlanders_coffee/data/models/staff.dart';
 import 'package:highlanders_coffee/state/admin_provider.dart';
@@ -335,6 +336,42 @@ void main() {
       // still reachable.
       expect(restored.distanceKm(), isNotNull);
     });
+
+    test('a linked payment account keeps its network, mask, tail and defaults', () {
+      final PaymentAccount original = PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'Marco Reyes',
+        // Only the masked string — this test document contains no full number
+        // anywhere, exactly as a real one must not.
+        accountLabel: '0917****000',
+        tail: '0000',
+        email: 'marco.reyes@email.com',
+        isDefault: true,
+        linkedAt: DateTime(2026, 9, 2, 8, 30),
+        gatewayId: 'mock-pm-1001',
+      );
+
+      final Map<String, dynamic> stored = original.toMap(uid: 'u-marco');
+      final PaymentAccount restored =
+          PaymentAccountSerialisation.fromMap(stored, 'wrong-id');
+
+      expect(restored.id, 'pm-gcash');
+      expect(restored.network, PaymentNetwork.gcash);
+      expect(restored.holderName, 'Marco Reyes');
+      expect(restored.accountLabel, '0917****000');
+      expect(restored.tail, '0000');
+      expect(restored.email, 'marco.reyes@email.com');
+      expect(restored.isDefault, isTrue);
+      expect(restored.linkedAt, DateTime(2026, 9, 2, 8, 30));
+      expect(restored.gatewayId, 'mock-pm-1001');
+      expect(restored.cardBrand, isNull);
+      // The uid rides along so the rules' `resource.data.uid` check can match.
+      expect(stored['uid'], 'u-marco');
+      // The raw number is not among the stored fields by construction.
+      expect(stored.keys, isNot(contains('number')));
+      expect(stored.keys, isNot(contains('cvc')));
+    });
   });
 
   group('serialisation tolerates damaged documents', () {
@@ -399,6 +436,17 @@ void main() {
     test('an absent settings document reads as open', () {
       // A document that fails to parse must not close the shop.
       expect(StoreSettingsSerialisation.fromMap(null).isOpen, isTrue);
+    });
+
+    test('a payment method with a corrupt body reads back usable', () {
+      final PaymentAccount back =
+          PaymentAccountSerialisation.fromMap(null, 'pm-fallback');
+
+      expect(back.id, 'pm-fallback');
+      // The gateway-less default, so an unknown network never crashes the read.
+      expect(back.network, PaymentNetwork.gcash);
+      expect(back.isDefault, isFalse);
+      expect(back.linkedAt.isAfter(DateTime(2000)), isTrue);
     });
   });
 
@@ -785,6 +833,92 @@ void main() {
       expect(failure, isNotNull);
       expect(failure!.message, contains('Sign in'));
     });
+
+    test('a linked payment account persists through save and load', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final PaymentAccount gcash = PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'Marco Reyes',
+        accountLabel: '0917****000',
+        tail: '0000',
+        isDefault: true,
+        linkedAt: DateTime(2026, 9, 2),
+        gatewayId: 'mock-pm-1001',
+      );
+
+      expect(await repo.savePaymentAccount('u-marco', gcash), isNull);
+      final List<PaymentAccount> loaded = await repo.loadPaymentAccounts('u-marco');
+      expect(loaded, hasLength(1));
+      expect(loaded.single.id, 'pm-gcash');
+      expect(loaded.single.network, PaymentNetwork.gcash);
+      expect(loaded.single.isDefault, isTrue);
+    });
+
+    test('saving over an existing id updates in place instead of duplicating', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.savePaymentAccount('u-marco', PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'Marco Reyes',
+        accountLabel: '0917****000',
+        tail: '0000',
+        linkedAt: DateTime(2026, 9, 2),
+      ));
+      await repo.savePaymentAccount('u-marco', PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'New Name',
+        accountLabel: '0917****000',
+        tail: '0000',
+        isDefault: true,
+        linkedAt: DateTime(2026, 9, 2),
+      ));
+
+      final List<PaymentAccount> loaded = await repo.loadPaymentAccounts('u-marco');
+      expect(loaded, hasLength(1));
+      expect(loaded.single.holderName, 'New Name');
+      expect(loaded.single.isDefault, isTrue);
+    });
+
+    test('an unlinked payment account is deleted', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.savePaymentAccount('u-marco', PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'Marco Reyes',
+        accountLabel: '0917****000',
+        tail: '0000',
+        linkedAt: DateTime(2026, 9, 2),
+      ));
+      expect(await repo.deletePaymentAccount('u-marco', 'pm-gcash'), isNull);
+      expect(await repo.loadPaymentAccounts('u-marco'), isEmpty);
+    });
+
+    test('payment methods are namespaced per customer', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.savePaymentAccount('u-marco', PaymentAccount(
+        id: 'pm-gcash',
+        network: PaymentNetwork.gcash,
+        holderName: 'Marco Reyes',
+        accountLabel: '0917****000',
+        tail: '0000',
+        linkedAt: DateTime(2026, 9, 2),
+      ));
+
+      // Another customer linking their own GCash shares the id but must not
+      // see or clobber Marco's entry — the same guarantee the rules provide.
+      expect(await repo.loadPaymentAccounts('u-someone-else'), isEmpty);
+      expect(await repo.loadPaymentAccounts('u-marco'), hasLength(1));
+    });
   });
 
   group('collection names match the security rules', () {
@@ -801,6 +935,7 @@ void main() {
         'staffMembers',
         'drivers',
         'addresses',
+        'paymentMethods',
         'users',
       ];
 
@@ -812,6 +947,7 @@ void main() {
         FirestorePaths.orders,
         FirestorePaths.staffMembers,
         FirestorePaths.addresses,
+        FirestorePaths.paymentMethods,
       ];
 
       for (final String name in used) {
@@ -826,6 +962,17 @@ void main() {
         FirestorePaths.addressDoc('u-a', 'home'),
         isNot(FirestorePaths.addressDoc('u-b', 'home')),
       );
+    });
+
+    test('a payment-method document id is namespaced by uid', () {
+      // Two customers linking their own GCash share the account id; the doc it
+      // lands on must still be private per customer.
+      expect(
+        FirestorePaths.paymentMethodDoc('u-a', 'pm-gcash'),
+        isNot(FirestorePaths.paymentMethodDoc('u-b', 'pm-gcash')),
+      );
+      // And the saved method mirrors the address pattern.
+      expect(FirestorePaths.paymentMethodDoc('u-marco', 'pm-gcash'), 'u-marco_pm-gcash');
     });
   });
 }

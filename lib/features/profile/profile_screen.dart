@@ -11,6 +11,7 @@ import '../../data/models/order.dart';
 import '../../state/session_provider.dart';
 import '../address/saved_addresses_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
+import '../payment_methods/payment_methods_screen.dart';
 
 /// Profile: solid black header card with avatar, name, email and a
 /// "Gold Member" tag, a floating white stats card, then the menu list.
@@ -57,7 +58,9 @@ class ProfileScreen extends StatelessWidget {
                       BwMenuRow(
                         icon: Icons.account_balance_wallet_outlined,
                         label: 'Payment Methods',
-                        onTap: () => _notReady(context, 'Payment Methods'),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const PaymentMethodsScreen()),
+                        ),
                       ),
                       BwMenuRow(
                         icon: Icons.card_giftcard_outlined,

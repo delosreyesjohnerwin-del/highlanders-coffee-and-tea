@@ -2,6 +2,7 @@ import 'dart:async';
 
 import '../models/menu.dart';
 import '../models/order.dart';
+import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
@@ -258,6 +259,7 @@ class MemoryShopRepository implements ShopRepository {
 
   final Map<String, List<Order>> _ordersByUid = <String, List<Order>>{};
   final Map<String, List<SavedAddress>> _addressesByUid = <String, List<SavedAddress>>{};
+  final Map<String, List<PaymentAccount>> _paymentAccountsByUid = <String, List<PaymentAccount>>{};
 
   @override
   Future<WriteFailure?> createOrder(Order order) async {
@@ -316,6 +318,39 @@ class MemoryShopRepository implements ShopRepository {
   @override
   Stream<List<SavedAddress>> watchAddresses(String uid) => Stream<List<SavedAddress>>.value(
         List<SavedAddress>.unmodifiable(_addressesByUid[uid] ?? const <SavedAddress>[]),
+      );
+
+  @override
+  Future<WriteFailure?> savePaymentAccount(String uid, PaymentAccount account) async {
+    if (failWrites) return _maybeFail('save payment method ${account.network.label}');
+
+    final List<PaymentAccount> existing = _paymentAccountsByUid[uid] ?? <PaymentAccount>[];
+    _paymentAccountsByUid[uid] = <PaymentAccount>[
+      for (final PaymentAccount a in existing)
+        if (a.id == account.id) account else a,
+      if (!existing.any((PaymentAccount a) => a.id == account.id)) account,
+    ];
+    return null;
+  }
+
+  @override
+  Future<WriteFailure?> deletePaymentAccount(String uid, String accountId) async {
+    if (failWrites) return _maybeFail('delete payment method $accountId');
+
+    _paymentAccountsByUid[uid] = (_paymentAccountsByUid[uid] ?? <PaymentAccount>[])
+        .where((PaymentAccount a) => a.id != accountId)
+        .toList(growable: false);
+    return null;
+  }
+
+  @override
+  Future<List<PaymentAccount>> loadPaymentAccounts(String uid) async =>
+      List<PaymentAccount>.unmodifiable(_paymentAccountsByUid[uid] ?? const <PaymentAccount>[]);
+
+  @override
+  Stream<List<PaymentAccount>> watchPaymentAccounts(String uid) =>
+      Stream<List<PaymentAccount>>.value(
+        List<PaymentAccount>.unmodifiable(_paymentAccountsByUid[uid] ?? const <PaymentAccount>[]),
       );
 
   // --- seed ---------------------------------------------------------------

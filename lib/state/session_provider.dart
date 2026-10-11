@@ -6,6 +6,7 @@ import '../data/firestore/firestore_errors.dart';
 import '../data/firestore/shop_repository.dart';
 import '../data/mock/mock_data.dart';
 import '../data/models/order.dart';
+import '../data/models/payment.dart';
 import '../services/auth_service.dart';
 import '../services/google_auth_service.dart';
 
@@ -61,6 +62,7 @@ class SessionProvider extends ChangeNotifier {
 
   StreamSubscription<List<Order>>? _ordersSub;
   StreamSubscription<List<SavedAddress>>? _addressesSub;
+  StreamSubscription<List<PaymentAccount>>? _paymentAccountsSub;
   WriteFailure? _failure;
 
   AuthStatus _status = AuthStatus.signedOut;
@@ -70,10 +72,12 @@ class SessionProvider extends ChangeNotifier {
   late AppUser _user;
   late List<SavedAddress> _addresses;
   late List<Order> _orders;
+  late List<PaymentAccount> _paymentAccounts;
 
   AppUser get user => _user;
   List<SavedAddress> get addresses => _addresses;
   List<Order> get orders => _orders;
+  List<PaymentAccount> get paymentAccounts => _paymentAccounts;
 
   AuthStatus get status => _status;
   bool get isSignedIn => _status == AuthStatus.signedIn;
@@ -127,6 +131,21 @@ class SessionProvider extends ChangeNotifier {
     return _addresses.first;
   }
 
+  PaymentAccount? get defaultPaymentAccount {
+    if (_paymentAccounts.isEmpty) return null;
+    for (final PaymentAccount a in _paymentAccounts) {
+      if (a.isDefault) return a;
+    }
+    return _paymentAccounts.first;
+  }
+
+  PaymentAccount? paymentAccountById(String id) {
+    for (final PaymentAccount a in _paymentAccounts) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
   /// Adds a new address or replaces an existing one (upsert by id), so the
   /// same method serves both the "add" and "edit" flows.
   ///
@@ -172,6 +191,61 @@ class SessionProvider extends ChangeNotifier {
     final ShopRepository? repo = _repository;
     if (repo == null) return;
     unawaited(repo.deleteAddress(_user.uid, id).then(_recordFailure));
+  }
+
+  /// Links a payment method, or updates one already linked (upsert by id).
+  ///
+  /// Marking a new account as default clears the flag on whatever previously
+  /// held it — the same invariant `addAddress` keeps for addresses. The
+  /// unset is written through too, so the persisted state matches the list.
+  void addPaymentAccount(PaymentAccount account) {
+    PaymentAccount? clearedDefault;
+    final List<PaymentAccount> next = <PaymentAccount>[];
+    bool replaced = false;
+
+    for (final PaymentAccount a in _paymentAccounts) {
+      if (a.id == account.id) {
+        next.add(account);
+        replaced = true;
+      } else if (a.isDefault && account.isDefault) {
+        final PaymentAccount cleared = a.copyWith(isDefault: false);
+        next.add(cleared);
+        clearedDefault = cleared;
+      } else {
+        next.add(a);
+      }
+    }
+    if (!replaced) next.add(account);
+
+    _paymentAccounts = next;
+    notifyListeners();
+
+    final ShopRepository? repo = _repository;
+    if (repo == null) return;
+    unawaited(repo.savePaymentAccount(_user.uid, account).then(_recordFailure));
+    if (clearedDefault != null) {
+      unawaited(repo.savePaymentAccount(_user.uid, clearedDefault).then(_recordFailure));
+    }
+  }
+
+  /// Makes [id] the default payment method, demoting whatever held the flag.
+  ///
+  /// No-op for an unknown id or when the account is already default. Reuses
+  /// [addPaymentAccount] so the two-write default-clearing logic lives once.
+  void setDefaultPaymentAccount(String id) {
+    final PaymentAccount? target = paymentAccountById(id);
+    if (target == null || target.isDefault) return;
+    addPaymentAccount(target.copyWith(isDefault: true));
+  }
+
+  void removePaymentAccount(String id) {
+    _paymentAccounts =
+        _paymentAccounts.where((PaymentAccount a) => a.id != id).toList(growable: false);
+    notifyListeners();
+
+    final ShopRepository? repo = _repository;
+    if (repo == null) return;
+    unawaited(repo.deletePaymentAccount(_user.uid, id).then(_recordFailure));
   }
 
   /// Appends a freshly placed order to the top of the history.
@@ -273,6 +347,7 @@ class SessionProvider extends ChangeNotifier {
     // was issued with.
     _cancelOrders();
     _cancelAddresses();
+    _cancelPaymentAccounts();
 
     await _auth.signOut();
     // Reset to the seeded customer account. Screens can still be rendered in
@@ -381,6 +456,7 @@ class SessionProvider extends ChangeNotifier {
 
     _cancelOrders();
     _cancelAddresses();
+    _cancelPaymentAccounts();
 
     _ordersSub = repo.watchOrdersFor(_user.uid).listen(
       (List<Order> orders) {
@@ -401,6 +477,16 @@ class SessionProvider extends ChangeNotifier {
         _recordFailure(describeFailure('watch your addresses', error));
       },
     );
+
+    _paymentAccountsSub = repo.watchPaymentAccounts(_user.uid).listen(
+      (List<PaymentAccount> accounts) {
+        _paymentAccounts = accounts;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        _recordFailure(describeFailure('watch your payment methods', error));
+      },
+    );
   }
 
   void _cancelOrders() {
@@ -413,11 +499,17 @@ class SessionProvider extends ChangeNotifier {
     _addressesSub = null;
   }
 
+  void _cancelPaymentAccounts() {
+    unawaited(_paymentAccountsSub?.cancel());
+    _paymentAccountsSub = null;
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _cancelOrders();
     _cancelAddresses();
+    _cancelPaymentAccounts();
     super.dispose();
   }
 
@@ -441,6 +533,7 @@ class SessionProvider extends ChangeNotifier {
       );
       _addresses = <SavedAddress>[];
       _orders = <Order>[];
+      _paymentAccounts = <PaymentAccount>[];
       return;
     }
 
@@ -448,10 +541,12 @@ class SessionProvider extends ChangeNotifier {
       _user = MockData.admin;
       _addresses = <SavedAddress>[];
       _orders = List<Order>.from(MockData.adminQueue);
+      _paymentAccounts = <PaymentAccount>[];
     } else {
       _user = MockData.user;
       _addresses = List<SavedAddress>.from(MockData.addresses);
       _orders = MockData.ordersFor(MockData.user.uid);
+      _paymentAccounts = List<PaymentAccount>.from(MockData.paymentAccounts);
     }
   }
 }

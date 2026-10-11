@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
+import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/staff.dart';
 import 'firestore_errors.dart';
@@ -429,6 +430,42 @@ class FirestoreShopRepository implements ShopRepository {
           .map((DocumentSnapshot<Map<String, dynamic>> d) =>
               SavedAddressSerialisation.fromMap(d.data(), d.id))
           .toList(growable: false));
+
+  @override
+  Future<WriteFailure?> savePaymentAccount(String uid, PaymentAccount account) => _guard(
+        'save payment method ${account.network.label}',
+        () => _collection(FirestorePaths.paymentMethods)
+            .doc(FirestorePaths.paymentMethodDoc(uid, account.id))
+            .set(account.toMap(uid: uid)),
+      );
+
+  @override
+  Future<WriteFailure?> deletePaymentAccount(String uid, String accountId) => _guard(
+        'delete payment method $accountId',
+        () => _collection(FirestorePaths.paymentMethods)
+            .doc(FirestorePaths.paymentMethodDoc(uid, accountId))
+            .delete(),
+      );
+
+  @override
+  Future<List<PaymentAccount>> loadPaymentAccounts(String uid) async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot =
+        await _collection(FirestorePaths.paymentMethods).where('uid', isEqualTo: uid).get();
+    return snapshot.docs
+        .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+            PaymentAccountSerialisation.fromMap(d.data(), d.id))
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<List<PaymentAccount>> watchPaymentAccounts(String uid) =>
+      _collection(FirestorePaths.paymentMethods)
+          .where('uid', isEqualTo: uid)
+          .snapshots()
+          .map((QuerySnapshot<Map<String, dynamic>> s) => s.docs
+              .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+                  PaymentAccountSerialisation.fromMap(d.data(), d.id))
+              .toList(growable: false));
 
   // --- seed ---------------------------------------------------------------
 
