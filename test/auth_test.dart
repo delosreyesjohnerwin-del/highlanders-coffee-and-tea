@@ -310,6 +310,68 @@ void main() {
     });
   });
 
+  group('session restore across launches', () {
+    testWidgets('a signed-in customer returns straight to the tabs',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      // The backend still holds the previous launch's session — what happens
+      // on a device after the user merely closed the app.
+      final SessionProvider session = await pumpRouted(
+        tester,
+        auth: MockAuthService(
+          signedIn: MockAuthService.demoIdentityFor(UserRole.customer),
+        ),
+      );
+
+      expect(session.isSignedIn, isTrue);
+      expect(session.user.email, 'marco.reyes@email.com');
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(find.byType(LoginScreen), findsNothing);
+      expect(find.byType(AdminDashboardScreen), findsNothing);
+    });
+
+    testWidgets('a signed-in admin returns straight to the admin panel',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      final SessionProvider session = await pumpRouted(
+        tester,
+        auth: MockAuthService(
+          signedIn: MockAuthService.demoIdentityFor(UserRole.admin),
+        ),
+      );
+
+      expect(session.isSignedIn, isTrue);
+      expect(session.user.role, UserRole.admin);
+      expect(find.byType(AdminDashboardScreen), findsOneWidget);
+      expect(find.byType(AppShell), findsNothing);
+      expect(find.byType(LoginScreen), findsNothing);
+    });
+
+    testWidgets('an explicit sign-out is not restored on the next launch',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+
+      final MockAuthService auth = MockAuthService();
+
+      // First launch: sign in, then deliberately sign out.
+      final SessionProvider session = await pumpRouted(tester, auth: auth);
+      await settleAuth(tester, session.signInWithGoogle());
+      expect(session.isSignedIn, isTrue);
+      await session.signOut();
+      await tester.pumpAndSettle();
+
+      // Second launch, same backend: the sign-out cleared the token, so the
+      // restore probe finds nothing and the login screen is the honest start.
+      final SessionProvider relaunched = await pumpRouted(tester, auth: auth);
+      expect(relaunched.isSignedIn, isFalse);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(find.byType(AppShell), findsNothing);
+      expect(find.byType(AdminDashboardScreen), findsNothing);
+    });
+  });
+
   group('MockAuthService', () {
     test('derives a display name from the email local part', () async {
       final MockAuthService auth = MockAuthService();

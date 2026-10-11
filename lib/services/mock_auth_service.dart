@@ -10,11 +10,13 @@ import 'auth_service.dart';
 /// navigable before `google-services.json` lands — it is **not** a security
 /// boundary and must never ship as the real login.
 class MockAuthService implements AuthService {
-  MockAuthService({this.overrideReason});
+  MockAuthService({this.overrideReason, AuthIdentity? signedIn}) : _current = signedIn;
 
   /// Shown on the login screen when the mock backend is active.
   final String? overrideReason;
 
+  /// Seeded for tests simulating a session persisted from a previous launch
+  /// (the role of Firebase's on-disk token in this backend).
   AuthIdentity? _current;
 
   static final RegExp _email = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');

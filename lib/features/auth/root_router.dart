@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/bw_brand.dart';
+import '../../core/theme/bw_colors.dart';
 import '../../state/admin_provider.dart';
 import '../../state/session_provider.dart';
 import '../admin/admin_dashboard_screen.dart';
@@ -39,6 +41,12 @@ class _RootRouterState extends State<RootRouter> {
   Widget build(BuildContext context) {
     final SessionProvider session = context.watch<SessionProvider>();
 
+    // Cold-start session restore in flight: hold a splash instead of flashing
+    // the login form at someone who is *already* signed in.
+    if (session.status == AuthStatus.restoring) {
+      return const _RestoringScreen();
+    }
+
     if (!session.isSignedIn) {
       _routedFor = null;
       return const LoginScreen();
@@ -58,5 +66,24 @@ class _RootRouterState extends State<RootRouter> {
     }
 
     return const AppShell();
+  }
+}
+
+/// Full-screen brand mark shown while a persisted session is being restored.
+///
+/// Deliberately static: an indeterminate spinner would keep `pumpAndSettle`
+/// from ever settling in tests, and the screen only lives for the (usually
+/// milliseconds-long) role lookup on an already-signed-in start.
+class _RestoringScreen extends StatelessWidget {
+  const _RestoringScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: BwColors.bg,
+      body: SafeArea(
+        child: Center(child: BwBrandmark(width: 180)),
+      ),
+    );
   }
 }

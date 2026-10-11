@@ -12,8 +12,12 @@ import '../services/google_auth_service.dart';
 /// Whether anyone is signed in.
 ///
 /// `signedOut` is the launch state — the login screen is the app's root until a
-/// successful sign-in flips this.
-enum AuthStatus { signedOut, signedIn, busy }
+/// successful sign-in flips this. `restoring` is the brief window during a cold
+/// start when a backend-persisted session is being checked, so the UI can hold
+/// a splash instead of flashing the login form at someone who is still signed
+/// in. Mirrors exist on the [AuthService] level; this reflects the question the
+/// UI actually asks: "does this user exist right now?"
+enum AuthStatus { signedOut, signedIn, busy, restoring }
 
 /// Signed-in user, saved addresses, order history and auth state.
 ///
@@ -34,10 +38,21 @@ class SessionProvider extends ChangeNotifier {
     _repository = repository;
 
     _loadAccount(UserRole.customer);
+
+    // A sign-out is not the reason the app is reopening in most launches:
+    // the backend (Firebase) persists its token across restarts, so a user
+    // who merely closed the app must never be asked to sign in again. Probe
+    // for that live session immediately — before the first frame, so the
+    // router can show the right thing from the start.
+    unawaited(_restore());
   }
 
   late final AuthService _auth;
   late final RoleResolver _roles;
+
+  /// Set once [dispose] ran. Async restore work must not notify a disposed
+  /// notifier, which throws in debug builds.
+  bool _disposed = false;
 
   /// Null when the app has no backend. Every method that touches it must handle
   /// null rather than assume a repository exists — the memory-backed providers
@@ -275,6 +290,49 @@ class SessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Boots into the backend session that survived the previous app run, if any.
+  ///
+  /// Everything before the first suspension runs synchronously in the
+  /// constructor, so by the time the first frame builds, `restoring` (or the
+  /// final signed-out state) is already decided: a signed-in user starts on a
+  /// splash, never on a login form. Role resolution is the only real await —
+  /// it needs a `users/{uid}` read on the live backend.
+  ///
+  /// An explicit sign-out clears the backend token, so `_auth.current` is null
+  /// on the next launch and this restores nothing. Only "closed the app, never
+  /// signed out" sessions come back.
+  Future<void> _restore() async {
+    _status = AuthStatus.restoring;
+    notifyListeners();
+
+    final AuthIdentity? identity = _auth.current;
+    if (identity == null) {
+      _status = AuthStatus.signedOut;
+      notifyListeners();
+      return;
+    }
+
+    UserRole role;
+    try {
+      role = await _roles.roleFor(identity);
+      await _roles.ensureUserDoc(identity, role);
+    } catch (_) {
+      // A transient lookup failure must not strand the user on a splash.
+      // Sign-in can retry on the login screen.
+      if (_disposed) return;
+      _status = AuthStatus.signedOut;
+      notifyListeners();
+      return;
+    }
+
+    if (_disposed) return;
+    _loadAccount(role, identity: identity);
+    _bindLiveData();
+    _status = AuthStatus.signedIn;
+    _lastError = null;
+    notifyListeners();
+  }
+
   void _setBusy() {
     _status = AuthStatus.busy;
     _lastError = null;
@@ -357,6 +415,7 @@ class SessionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _cancelOrders();
     _cancelAddresses();
     super.dispose();
