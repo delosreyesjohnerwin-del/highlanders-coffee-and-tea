@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
@@ -260,6 +262,7 @@ class MemoryShopRepository implements ShopRepository {
   final Map<String, List<Order>> _ordersByUid = <String, List<Order>>{};
   final Map<String, List<SavedAddress>> _addressesByUid = <String, List<SavedAddress>>{};
   final Map<String, List<PaymentAccount>> _paymentAccountsByUid = <String, List<PaymentAccount>>{};
+  final Map<String, Set<String>> _tokensByUid = <String, Set<String>>{};
 
   @override
   Future<WriteFailure?> createOrder(Order order) async {
@@ -352,6 +355,35 @@ class MemoryShopRepository implements ShopRepository {
       Stream<List<PaymentAccount>>.value(
         List<PaymentAccount>.unmodifiable(_paymentAccountsByUid[uid] ?? const <PaymentAccount>[]),
       );
+
+  @override
+  Future<WriteFailure?> saveNotificationToken(String uid, String token) async {
+    if (failWrites) return _maybeFail('register device for notifications');
+
+    // One registration per device token. Firestore keys the document by the
+    // token itself, so a second account signing in on the same phone rewrites
+    // the uid in place — mirror that by moving the token between uids rather
+    // than leaving copies behind.
+    for (final MapEntry<String, Set<String>> entry in _tokensByUid.entries) {
+      if (entry.key != uid) entry.value.remove(token);
+    }
+    _tokensByUid.putIfAbsent(uid, () => <String>{}).add(token);
+    return null;
+  }
+
+  @override
+  Future<WriteFailure?> deleteNotificationToken(String uid, String token) async {
+    if (failWrites) return _maybeFail('unregister device for notifications');
+
+    _tokensByUid[uid]?.remove(token);
+    return null;
+  }
+
+  /// Tokens registered for [uid]. The app never reads tokens back, so this is
+  /// only for tests and diagnostics.
+  @visibleForTesting
+  Set<String> registeredTokens(String uid) =>
+      Set<String>.unmodifiable(_tokensByUid[uid] ?? const <String>{});
 
   // --- seed ---------------------------------------------------------------
 

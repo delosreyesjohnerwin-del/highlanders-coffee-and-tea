@@ -197,6 +197,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // --- notificationTokens ----------------------------------------------
+    //
+    // One document per installed app, keyed by the FCM device token and scoped
+    // to the signed-in user, written by the app itself when it registers for
+    // push. The `onOrderCreated` / `onOrderUpdated` Cloud Functions read it
+    // through the admin SDK (rules do not apply) to find whose devices to push
+    // to, so no client read rule is needed — and no client should be able to
+    // read the list of who else has the app installed, so there is none. A
+    // customer may register their own device and unregister it; the `uid`
+    // equality check stops one customer from re-pointing another's device.
+    match /notificationTokens/{token} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
     // Two "Home" entries is possible: the rules scope addresses by uid, not by
     // uniqueness of the label, and enforcing a single default would need a
     // transaction across every address document of a customer. `defaultAddress`

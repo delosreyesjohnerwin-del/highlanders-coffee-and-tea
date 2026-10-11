@@ -343,3 +343,8 @@ export const linkPaymentMethod = functions.https.onCall(
         throw new functions.https.HttpsError('invalid-argument', 'Unsupported payment network.');
     }
   });
+
+// Register the push-notification triggers. Kept in a separate module — this
+// file is already mostly Xendit — and imported here so they deploy as part of
+// the same functions bundle (the CLI only loads what `index.js` imports).
+import './notifications';

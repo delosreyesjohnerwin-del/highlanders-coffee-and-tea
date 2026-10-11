@@ -46,6 +46,7 @@ dependencies:
   latlong2: ^0.10.1
   geolocator: ^14.1.1
   cloud_functions: ^6.5.0
+  firebase_messaging: ^16.7.0
 
 dev_dependencies:
   flutter_test:

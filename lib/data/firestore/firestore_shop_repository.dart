@@ -467,6 +467,25 @@ class FirestoreShopRepository implements ShopRepository {
                   PaymentAccountSerialisation.fromMap(d.data(), d.id))
               .toList(growable: false));
 
+  @override
+  Future<WriteFailure?> saveNotificationToken(String uid, String token) => _guard(
+        'register device for notifications',
+        () => _collection(FirestorePaths.notificationTokens)
+            .doc(token)
+            .set(<String, dynamic>{
+          'uid': uid,
+          'token': token,
+          'platform': 'android',
+          'createdAt': FieldValue.serverTimestamp(),
+        }),
+      );
+
+  @override
+  Future<WriteFailure?> deleteNotificationToken(String uid, String token) => _guard(
+        'unregister device for notifications',
+        () => _collection(FirestorePaths.notificationTokens).doc(token).delete(),
+      );
+
   // --- seed ---------------------------------------------------------------
 
   @override

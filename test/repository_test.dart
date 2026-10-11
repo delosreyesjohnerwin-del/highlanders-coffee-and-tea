@@ -921,6 +921,51 @@ void main() {
     });
   });
 
+  group('notification tokens', () {
+    test('a device token registers under its uid and keeps its identity', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotificationToken('u-marco', 'fcm-token-123');
+      await repo.saveNotificationToken('u-marco', 'fcm-token-123');
+
+      expect(repo.registeredTokens('u-marco'), hasLength(1));
+      expect(repo.registeredTokens('u-marco'), contains('fcm-token-123'));
+      expect(repo.registeredTokens('u-someone-else'), isEmpty);
+    });
+
+    test('a duplicate save is idempotent (the doc is the token)', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotificationToken('u-marco', 'fcm-token-123');
+      // A second account signing in on the same device rewrites the uid, which
+      // is exactly how a shared phone stops pushing to the previous owner.
+      await repo.saveNotificationToken('u-ana', 'fcm-token-123');
+
+      expect(repo.registeredTokens('u-marco'), isEmpty);
+      expect(repo.registeredTokens('u-ana'), contains('fcm-token-123'));
+    });
+
+    test('a device token unregisters', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotificationToken('u-marco', 'fcm-token-123');
+      expect(await repo.deleteNotificationToken('u-marco', 'fcm-token-123'), isNull);
+      expect(repo.registeredTokens('u-marco'), isEmpty);
+    });
+
+    test('a failed write is reported like every other repository write', () async {
+      final MemoryShopRepository repo = MemoryShopRepository()..failWrites = true;
+      addTearDown(repo.dispose);
+
+      final WriteFailure? failure = await repo.saveNotificationToken('u-marco', 'fcm-token-123');
+      expect(failure, isNotNull);
+      expect(failure!.operation, contains('register device'));
+    });
+  });
+
   group('collection names match the security rules', () {
     test('every path is one the rules actually name', () {
       // A typo here does not fail loudly. The catch-all at the bottom of
@@ -937,6 +982,7 @@ void main() {
         'addresses',
         'paymentMethods',
         'paymentGatewayCustomers',
+        'notificationTokens',
         'users',
       ];
 
@@ -950,6 +996,7 @@ void main() {
         FirestorePaths.addresses,
         FirestorePaths.paymentMethods,
         FirestorePaths.paymentGatewayCustomers,
+        FirestorePaths.notificationTokens,
       ];
 
       for (final String name in used) {

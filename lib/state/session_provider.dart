@@ -452,7 +452,7 @@ class SessionProvider extends ChangeNotifier {
   void _bindLiveData() {
     final ShopRepository? repo = _repository;
     if (repo == null || !repo.isLive) return;
-    if (_user.uid == _seedUid) return;
+    if (_user.uid == SessionProvider.seedUid) return;
 
     _cancelOrders();
     _cancelAddresses();
@@ -515,7 +515,10 @@ class SessionProvider extends ChangeNotifier {
 
   /// The seeded accounts' uid. Orders and addresses are never fetched for it:
   /// [MockData] already holds them, and there is no such document in Firestore.
-  static const String _seedUid = 'u-marco';
+  ///
+  /// Public because [NotificationService] makes the same skip for device-token
+  /// registration — a token under this uid would be an orphan in Firestore.
+  static const String seedUid = 'u-marco';
 
   /// Swaps in the seeded account for [role], or builds one from a real identity.
   void _loadAccount(UserRole role, {AuthIdentity? identity}) {

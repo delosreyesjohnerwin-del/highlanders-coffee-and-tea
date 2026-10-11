@@ -7,6 +7,7 @@ import 'data/firestore/shop_repository.dart';
 import 'features/auth/root_router.dart';
 import 'features/shell/app_shell.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'state/admin_provider.dart';
 import 'state/cart_provider.dart';
 import 'state/catalog_provider.dart';
@@ -52,6 +53,11 @@ class HighlandersApp extends StatefulWidget {
 class _HighlandersAppState extends State<HighlandersApp> {
   late final ShopRepository _repository = createShopRepository();
 
+  /// The single navigator, shared with [NotificationService] so a push tap can
+  /// route to the screen the push refers to without holding a `BuildContext`
+  /// that might outlive the message.
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     final ShopRepository repository = _repository;
@@ -92,11 +98,23 @@ class _HighlandersAppState extends State<HighlandersApp> {
             return next;
           },
         ),
+        // Push notifications. A no-op whenever Firebase is not configured
+        // ([MessagingBackend.isAvailable] is false), which is also what keeps
+        // every widget test off the platform channels while still exercising
+        // the same provider graph production uses.
+        ChangeNotifierProvider<NotificationService>(
+          create: (BuildContext context) => NotificationService(
+            repository: repository,
+            session: context.read<SessionProvider>(),
+            navigatorKey: _navigatorKey,
+          )..init(),
+        ),
       ],
       child: MaterialApp(
         title: 'Highlanders Coffee & Tea',
         debugShowCheckedModeBanner: false,
         theme: BwTheme.build(),
+        navigatorKey: _navigatorKey,
         home: widget.home ?? const AppShell(),
       ),
     );

@@ -44,6 +44,15 @@ class FirestorePaths {
   /// rules block denies everything.
   static const String paymentGatewayCustomers = 'paymentGatewayCustomers';
 
+  /// FCM device registrations, keyed by the device token itself.
+  ///
+  /// Written by the app when a signed-in user grants notification permission
+  /// (one document per device, uid-scoped) and read by the `onOrderCreated` /
+  /// `onOrderUpdated` Cloud Functions via the admin SDK to find the tokens to
+  /// push to. A re-registration overwrites the document, so signing into a
+  /// second account on the same device simply rewrites `uid`.
+  static const String notificationTokens = 'notificationTokens';
+
   /// The one shop-settings document id.
   ///
   /// A single id means the app reads one document instead of running a

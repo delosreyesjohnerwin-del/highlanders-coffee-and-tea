@@ -90,6 +90,17 @@ abstract class ShopRepository {
 
   Stream<List<PaymentAccount>> watchPaymentAccounts(String uid);
 
+  // --- notifications ------------------------------------------------------
+
+  /// Registers an FCM device token under [uid], keyed by the token itself so a
+  /// re-registration (new device, token rotation, another account on the same
+  /// device) overwrites rather than accumulates. The Cloud Functions read
+  /// `notificationTokens`, so no client-side load exists.
+  Future<WriteFailure?> saveNotificationToken(String uid, String token);
+
+  /// Removes a device token registration.
+  Future<WriteFailure?> deleteNotificationToken(String uid, String token);
+
   // --- seed ---------------------------------------------------------------
 
   /// Writes [snapshot]'s catalog and admin content to the backend.
