@@ -7,6 +7,7 @@ import 'data/firestore/shop_repository.dart';
 import 'features/auth/root_router.dart';
 import 'features/shell/app_shell.dart';
 import 'services/auth_service.dart';
+import 'services/in_app_alert.dart';
 import 'services/notification_service.dart';
 import 'state/admin_provider.dart';
 import 'state/cart_provider.dart';
@@ -58,6 +59,13 @@ class _HighlandersAppState extends State<HighlandersApp> {
   /// that might outlive the message.
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
+  /// Where the free notification path's banners go.
+  ///
+  /// Built on the navigator's context rather than the app root's: the
+  /// `ScaffoldMessenger` lives *inside* `MaterialApp`, so a context above it
+  /// finds nothing and every alert is silently dropped.
+  late final InAppAlertPresenter _alerts = NavigatorAlertPresenter(_navigatorKey);
+
   @override
   Widget build(BuildContext context) {
     final ShopRepository repository = _repository;
@@ -72,6 +80,7 @@ class _HighlandersAppState extends State<HighlandersApp> {
             authService: widget.authService,
             roleResolver: widget.roleResolver,
             repository: repository,
+            alerts: _alerts,
           ),
         ),
         // The shop-wide view: every order, all stock, all staff. Separate from
@@ -81,7 +90,7 @@ class _HighlandersAppState extends State<HighlandersApp> {
         // admin — see RootRouter — because a customer reading the order list is
         // denied by the rules and the resulting error would look like a fault.
         ChangeNotifierProvider<AdminProvider>(
-          create: (_) => AdminProvider(repository: repository),
+          create: (_) => AdminProvider(repository: repository, alerts: _alerts),
         ),
         // The cart needs the catalog to resolve names, prices and the fee
         // schedule, and the session for saved addresses.
@@ -110,18 +119,12 @@ class _HighlandersAppState extends State<HighlandersApp> {
           )..init(),
         ),
       ],
-      child: Builder(
-        builder: (BuildContext context) {
-          final admin = context.read<AdminProvider>();
-          admin.attachContext(context);
-          return MaterialApp(
-            title: 'Highlanders Coffee & Tea',
-            debugShowCheckedModeBanner: false,
-            theme: BwTheme.build(),
-            navigatorKey: _navigatorKey,
-            home: widget.home ?? const AppShell(),
-          );
-        },
+      child: MaterialApp(
+        title: 'Highlanders Coffee & Tea',
+        debugShowCheckedModeBanner: false,
+        theme: BwTheme.build(),
+        navigatorKey: _navigatorKey,
+        home: widget.home ?? const AppShell(),
       ),
     );
   }

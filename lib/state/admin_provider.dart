@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../data/firestore/firestore_errors.dart';
 import '../data/firestore/memory_shop_repository.dart';
@@ -12,6 +11,7 @@ import '../data/models/menu.dart';
 import '../data/models/order.dart';
 import '../data/models/settings.dart';
 import '../data/models/staff.dart';
+import '../services/in_app_alert.dart';
 
 /// One bar in the 7-day revenue chart.
 @immutable
@@ -50,13 +50,20 @@ class ItemPerformance {
 /// one customer's. Both are in-memory placeholders until Firestore replaces
 /// them, at which point only this file and `catalog_provider.dart` change.
 class AdminProvider extends ChangeNotifier {
-  AdminProvider({ShopRepository? repository})
+  AdminProvider({ShopRepository? repository, InAppAlertPresenter? alerts})
       : _repository = repository ?? MemoryShopRepository(),
+        _alerts = alerts ?? const NoopAlertPresenter(),
         _orders = <Order>[...MockData.adminQueue, ...MockData.tradingHistory],
         _staff = List<StaffMember>.from(MockData.staff),
         _today = _startOfDay(DateTime.now());
 
   final ShopRepository _repository;
+
+  /// Where a change the café should notice becomes an in-app banner. The free
+  /// path's replacement for a push: nothing sends to a closed app, so the app
+  /// announces what its own live order stream shows it.
+  final InAppAlertPresenter _alerts;
+
   StreamSubscription<AdminSnapshot>? _subscription;
   bool _bound = false;
   bool _loaded = false;
@@ -88,10 +95,21 @@ class AdminProvider extends ChangeNotifier {
         // empty board would be a lie the operator cannot detect.
         if (snapshot.isEmpty) return;
 
+        // Diff before overwriting. The free notification path has no server
+        // sender, so a new order is only ever noticed here — the café's own
+        // order stream — and it must be announced before the list is replaced.
+        final List<Order> previous = _orders;
+        final bool firstLoad = !_loaded;
+
         _orders = snapshot.orders;
         _staff = snapshot.staff;
         _settings = snapshot.settings;
         _loaded = true;
+
+        // The first live emission is the whole board, not a burst of new
+        // orders. Announcing it would fire "new order" for all of history.
+        if (!firstLoad) _announceNewOrders(previous, snapshot.orders);
+
         notifyListeners();
       },
       onError: (Object error) {
@@ -102,9 +120,13 @@ class AdminProvider extends ChangeNotifier {
     );
   }
 
-  /// Binds the navigator context so in-app alerts can be shown.
-  void attachContext(BuildContext context) {
-    _context = context;
+  /// Shows a banner for the newest order the café had not seen yet.
+  void _announceNewOrders(List<Order> previous, List<Order> next) {
+    final List<Order> fresh = newOrdersBetween(previous, next);
+    if (fresh.isEmpty) return;
+
+    final String from = fresh.first.customerName?.trim() ?? '';
+    _alerts.show(from.isEmpty ? 'New order received' : 'New order from $from');
   }
 
   /// The failure to show, and clears it.
@@ -137,8 +159,6 @@ class AdminProvider extends ChangeNotifier {
     opensAt: '7:00 AM',
     closesAt: '10:00 PM',
   );
-
-  BuildContext? _context;
 
   List<Order> get orders => _orders;
   List<StaffMember> get staff => _staff;
@@ -287,40 +307,7 @@ class AdminProvider extends ChangeNotifier {
   }
 
   void _showLocalInAppAlert(Order order, OrderStatus status) {
-    final BuildContext? context = _context;
-    if (context == null) return;
-    try {
-      final messenger = ScaffoldMessenger.maybeOf(context);
-      if (messenger == null) return;
-      messenger.hideCurrentSnackBar();
-      final String body = _statusCopy(status, order);
-      if (body.isEmpty) return;
-      unawaited(HapticFeedback.lightImpact());
-      messenger.showSnackBar(SnackBar(content: Text(body)));
-    } catch (_) {
-      return;
-    }
-  }
-
-  static String _statusCopy(OrderStatus status, Order order) {
-    switch (status) {
-      case OrderStatus.pending:
-        return 'Order received';
-      case OrderStatus.confirmed:
-        return 'Order confirmed';
-      case OrderStatus.preparing:
-        return 'Order is being prepared';
-      case OrderStatus.ready:
-        return order.fulfillment == Fulfillment.pickup ? 'Ready for pickup' : 'Ready';
-      case OrderStatus.outForDelivery:
-        return 'Out for delivery';
-      case OrderStatus.delivered:
-        return 'Order delivered — enjoy!';
-      case OrderStatus.failedDelivery:
-        return 'Delivery failed — contact the customer';
-      case OrderStatus.cancelled:
-        return 'Order cancelled';
-    }
+    _alerts.show(orderStatusCopy(status, order));
   }
 
   // --- staff --------------------------------------------------------------

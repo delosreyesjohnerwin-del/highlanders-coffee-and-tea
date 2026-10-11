@@ -7,7 +7,6 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../core/firebase/firebase_bootstrap.dart';
@@ -17,6 +16,7 @@ import '../data/models/order.dart';
 import '../features/admin/admin_dashboard_screen.dart';
 import '../features/order_tracking/order_tracking_screen.dart';
 import '../state/session_provider.dart';
+import 'in_app_alert.dart';
 
 /// One notification tap decoded from a pushed message's `data` map.
 ///
@@ -319,13 +319,8 @@ class NotificationService extends ChangeNotifier {
   // --- message display & routing --------------------------------------------
 
   void _showForegroundBanner(RemoteMessage message) {
-    final BuildContext? context = _navigatorKey.currentContext;
-    if (context == null) return;
     final String body = message.notification?.body ?? 'Order update';
-    unawaited(HapticFeedback.lightImpact());
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(body)));
+    showInAppAlert(_navigatorKey.currentContext, body);
   }
 
   void _handleMessage(RemoteMessage message) {

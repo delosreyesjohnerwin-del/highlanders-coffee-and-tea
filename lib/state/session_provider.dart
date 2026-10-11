@@ -9,6 +9,7 @@ import '../data/models/order.dart';
 import '../data/models/payment.dart';
 import '../services/auth_service.dart';
 import '../services/google_auth_service.dart';
+import '../services/in_app_alert.dart';
 
 /// Whether anyone is signed in.
 ///
@@ -30,6 +31,7 @@ class SessionProvider extends ChangeNotifier {
     AuthService? authService,
     RoleResolver? roleResolver,
     ShopRepository? repository,
+    InAppAlertPresenter? alerts,
   }) {
     // Resolved in the body rather than the initializer list: role resolution
     // depends on which backend was chosen, which is not known until the auth
@@ -37,6 +39,7 @@ class SessionProvider extends ChangeNotifier {
     _auth = authService ?? AuthServiceFactory.create();
     _roles = roleResolver ?? AuthServiceFactory.roleResolverFor(_auth);
     _repository = repository;
+    _alerts = alerts ?? const NoopAlertPresenter();
 
     _loadAccount(UserRole.customer);
 
@@ -50,6 +53,10 @@ class SessionProvider extends ChangeNotifier {
 
   late final AuthService _auth;
   late final RoleResolver _roles;
+
+  /// Where a status change the customer should notice becomes an in-app banner.
+  /// The free path's replacement for a push.
+  late final InAppAlertPresenter _alerts;
 
   /// Set once [dispose] ran. Async restore work must not notify a disposed
   /// notifier, which throws in debug builds.
@@ -485,6 +492,9 @@ class SessionProvider extends ChangeNotifier {
 
     _ordersSub = repo.watchOrdersFor(_user.uid).listen(
       (List<Order> orders) {
+        // Diff before overwriting, so a status the café advanced on another
+        // device is announced rather than silently swapped in.
+        _announceOrderChanges(_orders, orders);
         _orders = orders;
         notifyListeners();
       },
@@ -512,6 +522,22 @@ class SessionProvider extends ChangeNotifier {
         _recordFailure(describeFailure('watch your payment methods', error));
       },
     );
+  }
+
+  /// Shows a banner when one of the customer's known orders changes status.
+  ///
+  /// This is the customer half of the free notification path: the café advances
+  /// the order in Firestore, this device's own order stream echoes the new
+  /// status, and that echo is what the customer is told about. Reaching a
+  /// closed app needs a server sender, which is not deployed.
+  void _announceOrderChanges(List<Order> previous, List<Order> next) {
+    final List<Order> changed = statusChangedBetween(previous, next);
+    if (changed.isEmpty) return;
+
+    final Order order = changed.first;
+    final String body = orderStatusCopy(order.status, order);
+    final String? code = order.pickupCode;
+    _alerts.show(code == null || code.isEmpty ? body : '$body · $code');
   }
 
   void _cancelOrders() {
