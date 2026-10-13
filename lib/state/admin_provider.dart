@@ -6,6 +6,7 @@ import '../data/firestore/firestore_errors.dart';
 import '../data/firestore/memory_shop_repository.dart';
 import '../data/firestore/shop_repository.dart';
 import '../data/mock/mock_data.dart';
+import '../data/models/app_notification.dart';
 import '../data/models/coverage.dart';
 import '../data/models/menu.dart';
 import '../data/models/order.dart';
@@ -53,14 +54,28 @@ class ItemPerformance {
 /// one customer's. Both are in-memory placeholders until Firestore replaces
 /// them, at which point only this file and `catalog_provider.dart` change.
 class AdminProvider extends ChangeNotifier {
-  AdminProvider({ShopRepository? repository, InAppAlertPresenter? alerts})
-      : _repository = repository ?? MemoryShopRepository(),
+  AdminProvider({
+    ShopRepository? repository,
+    InAppAlertPresenter? alerts,
+    String? Function()? currentUid,
+  })  : _repository = repository ?? MemoryShopRepository(),
         _alerts = alerts ?? const NoopAlertPresenter(),
+        // A private named field: Dart has no initializing formal for one, so the
+        // assignment is the idiomatic (and only) shape here.
+        // ignore: prefer_initializing_formals
+        _currentUid = currentUid,
         _orders = <Order>[...MockData.adminQueue, ...MockData.tradingHistory],
         _staff = List<StaffMember>.from(MockData.staff),
         _today = _startOfDay(DateTime.now());
 
   final ShopRepository _repository;
+
+  /// The signed-in admin's uid, resolved lazily at write time.
+  ///
+  /// The provider is built before the session resolves, so it cannot hold a
+  /// fixed uid. A null result (signed out, or the demo account) simply means the
+  /// inbox record is skipped — the in-app banner still fires.
+  final String? Function()? _currentUid;
 
   /// Where a change the café should notice becomes an in-app banner. The free
   /// path's replacement for a push: nothing sends to a closed app, so the app
@@ -100,16 +115,18 @@ class AdminProvider extends ChangeNotifier {
 
     _subscription = _repository.watchAdmin().listen(
       (AdminSnapshot snapshot) {
-        // Guard against an empty first emission. A brand-new project returns four
-        // empty collections, and replacing ₱16,085 of trading history with an
-        // empty board would be a lie the operator cannot detect.
-        if (snapshot.isEmpty) return;
-
-        // Diff before overwriting. The free notification path has no server
-        // sender, so a new order is only ever noticed here — the café's own
-        // order stream — and it must be announced before the list is replaced.
-        final List<Order> previous = _orders;
+        // The first live emission replaces whatever was on screen — including
+        // the bundled mock history — and is never announced, because every order
+        // is "new" to a provider that has not loaded yet.
+        //
+        // Marking `_loaded` here even for an *empty* snapshot is load-bearing.
+        // The previous version returned early when the snapshot was empty, so on
+        // a fresh shop the very first real order arrived while `_loaded` was
+        // still false: it was treated as the first load and its "new order"
+        // banner was swallowed. An empty board is also the honest state of an
+        // empty shop, so adopting it is correct rather than a lie.
         final bool firstLoad = !_loaded;
+        final List<Order> previous = _orders;
 
         _orders = snapshot.orders;
         // Merge rather than replace: a roster snapshot can arrive without a
@@ -122,8 +139,6 @@ class AdminProvider extends ChangeNotifier {
         _settings = snapshot.settings;
         _loaded = true;
 
-        // The first live emission is the whole board, not a burst of new
-        // orders. Announcing it would fire "new order" for all of history.
         if (!firstLoad) _announceNewOrders(previous, snapshot.orders);
 
         notifyListeners();
@@ -175,13 +190,30 @@ class AdminProvider extends ChangeNotifier {
     ];
   }
 
-  /// Shows a banner for the newest order the café had not seen yet.
+  /// Persists a café-side inbox record for every order the board had not seen,
+  /// then shows one banner for the newest.
+  ///
+  /// The record is what survives a closed app and drives the bell badge; the
+  /// banner is the immediate half. Both carry the order id.
   void _announceNewOrders(List<Order> previous, List<Order> next) {
     final List<Order> fresh = newOrdersBetween(previous, next);
     if (fresh.isEmpty) return;
 
-    final String from = fresh.first.customerName?.trim() ?? '';
-    _alerts.show(from.isEmpty ? 'New order received' : 'New order from $from');
+    final String? uid = _currentUid?.call();
+    for (final Order order in fresh) {
+      _persistNotification(uid, AppNotification.forNewOrder(order));
+    }
+    _alerts.show(AppNotification.forNewOrder(fresh.first).body);
+  }
+
+  /// Writes one inbox record, best-effort like every other write.
+  ///
+  /// A null [uid] means nobody is signed in to own the record — the in-app
+  /// banner has already fired, and skipping the write keeps the inbox from
+  /// collecting orphans under an account that does not exist.
+  void _persistNotification(String? uid, AppNotification notification) {
+    if (uid == null || uid.isEmpty) return;
+    unawaited(_repository.saveNotification(uid, notification).then(_recordFailure));
   }
 
   /// The failure to show, and clears it.
@@ -273,6 +305,9 @@ class AdminProvider extends ChangeNotifier {
     _orders = <Order>[..._orders]..[i] = next;
     notifyListeners();
     _showLocalInAppAlert(_orders[i], pipeline[step + 1]);
+    // Mirror the change into the customer's inbox. Deterministic id, so the
+    // customer's own device writing the same change is a harmless overwrite.
+    _persistNotification(next.customerUid, AppNotification.forStatusChange(next));
     // `unawaited`: the caller is a button handler that must return a bool
     // synchronously for the UI's enabled/disabled logic. The write failure is
     // recorded instead of thrown — see _recordFailure.
@@ -289,6 +324,7 @@ class AdminProvider extends ChangeNotifier {
     _orders = <Order>[..._orders]..[i] = next;
     notifyListeners();
     _showLocalInAppAlert(_orders[i], next.status);
+    _persistNotification(next.customerUid, AppNotification.forStatusChange(next));
     unawaited(_repository.saveOrder(next).then(_recordFailure));
   }
 
@@ -363,7 +399,9 @@ class AdminProvider extends ChangeNotifier {
   }
 
   void _showLocalInAppAlert(Order order, OrderStatus status) {
-    _alerts.show(orderStatusCopy(status, order));
+    // Admin-facing wording (not the customer's), prefixed with the order id so
+    // the operator can match the banner to the row they just moved.
+    _alerts.show('#${order.id} · ${orderStatusCopy(status, order)}');
   }
 
   // --- staff --------------------------------------------------------------

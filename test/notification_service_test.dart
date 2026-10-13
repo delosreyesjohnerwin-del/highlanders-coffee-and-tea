@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'package:highlanders_coffee/data/firestore/memory_shop_repository.dart';
 import 'package:highlanders_coffee/data/firestore/shop_repository.dart';
+import 'package:highlanders_coffee/data/models/app_notification.dart';
 import 'package:highlanders_coffee/features/admin/admin_dashboard_screen.dart';
 import 'package:highlanders_coffee/features/order_tracking/order_tracking_screen.dart';
 import 'package:highlanders_coffee/services/mock_auth_service.dart';
@@ -14,6 +15,7 @@ import 'package:highlanders_coffee/services/notification_service.dart';
 import 'package:highlanders_coffee/state/admin_provider.dart';
 import 'package:highlanders_coffee/state/cart_provider.dart';
 import 'package:highlanders_coffee/state/catalog_provider.dart';
+import 'package:highlanders_coffee/state/notification_center.dart';
 import 'package:highlanders_coffee/state/session_provider.dart';
 
 /// Test double for the platform slice of FCM, driven by stream controllers so
@@ -69,12 +71,14 @@ void main() {
     required SessionProvider session,
     required GlobalKey<NavigatorState> navigatorKey,
     required _FakeMessagingBackend backend,
+    NotificationCenter? notifications,
   }) =>
       NotificationService(
         repository: repository,
         session: session,
         navigatorKey: navigatorKey,
         backend: backend,
+        notifications: notifications,
       );
 
   group('device token registration', () {
@@ -218,6 +222,10 @@ void main() {
               create: (_) => CatalogProvider(repository: repository)..bind(),
             ),
             ChangeNotifierProvider<SessionProvider>.value(value: session),
+            ChangeNotifierProvider<NotificationCenter>(
+              create: (_) =>
+                  NotificationCenter(repository: repository, session: session),
+            ),
             ChangeNotifierProvider<AdminProvider>(
               create: (_) => AdminProvider(repository: repository),
             ),
@@ -394,6 +402,77 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(OrderTrackingScreen), findsNothing);
+    });
+
+    testWidgets('a foreground push for an order already in the inbox is dropped',
+        (WidgetTester tester) async {
+      final MemoryShopRepository repo = newRepository();
+      final SessionProvider session = SessionProvider(
+        authService: MockAuthService(),
+        roleResolver: const MockRoleResolver(),
+        repository: repo,
+      );
+      final NotificationCenter center =
+          NotificationCenter(repository: repo, session: session);
+      addTearDown(center.dispose);
+
+      final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+      final _FakeMessagingBackend backend = _FakeMessagingBackend();
+      final NotificationService service = newService(
+        repository: repo,
+        session: session,
+        navigatorKey: navigatorKey,
+        backend: backend,
+        notifications: center,
+      );
+      addTearDown(service.dispose);
+      addTearDown(backend.dispose);
+
+      await pumpHarness(tester,
+          repository: repo, session: session, navigatorKey: navigatorKey);
+      await service.init();
+
+      // Sign in so the center binds, then put the change in the inbox exactly as
+      // the app's own order-stream listener would have. The mock backend
+      // simulates ~300ms of latency, so this runs in real async; awaiting it
+      // against the widget test's fake clock would deadlock.
+      await tester.runAsync(() async {
+        await session.signInWithPassword(
+          email: 'ana.dizon@email.com',
+          password: 'secret1',
+          rememberMe: true,
+        );
+        await repo.saveNotification(
+          session.user.uid,
+          AppNotification(
+            id: AppNotification.newOrderId('HL-2601-6372'),
+            type: AppNotificationType.newOrder,
+            title: 'New order received',
+            body: 'New Order Received #HL-2601-6372',
+            orderId: 'HL-2601-6372',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        // Let the broadcast controller deliver the record to the center's
+        // listener before the push arrives.
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      });
+      await tester.pump();
+
+      // The relay's push for the same order lands while the app is open. The
+      // banner has already been shown from the stream, so this must be silent.
+      backend.emitForeground(RemoteMessage(
+        data: <String, dynamic>{'type': NotificationTap.newOrder, 'orderId': 'HL-2601-6372'},
+        notification: const RemoteNotification(
+          title: 'New order received',
+          body: 'New Order Received #HL-2601-6372',
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('New Order Received #HL-2601-6372'), findsNothing);
+      expect(find.byType(AdminDashboardScreen), findsNothing);
     });
   });
 }

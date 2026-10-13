@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../data/firestore/firestore_errors.dart';
 import '../data/firestore/shop_repository.dart';
 import '../data/mock/mock_data.dart';
+import '../data/models/app_notification.dart';
 import '../data/models/order.dart';
 import '../data/models/payment.dart';
 import '../services/auth_service.dart';
@@ -524,20 +525,31 @@ class SessionProvider extends ChangeNotifier {
     );
   }
 
-  /// Shows a banner when one of the customer's known orders changes status.
+  /// Shows a banner when one of the customer's known orders changes status, and
+  /// persists the same change as an inbox record.
   ///
-  /// This is the customer half of the free notification path: the café advances
-  /// the order in Firestore, this device's own order stream echoes the new
-  /// status, and that echo is what the customer is told about. Reaching a
-  /// closed app needs a server sender, which is not deployed.
+  /// Both halves matter and they do different jobs: the banner is the immediate
+  /// nudge and only exists while the app is open; the record survives the app
+  /// closing and is what drives the bell badge and the notifications screen.
+  /// The record's id is deterministic (`order-status-<id>-<status>`), so the
+  /// Cloudflare relay backfilling the same change for a closed app lands on the
+  /// same document instead of duplicating it.
   void _announceOrderChanges(List<Order> previous, List<Order> next) {
     final List<Order> changed = statusChangedBetween(previous, next);
     if (changed.isEmpty) return;
 
-    final Order order = changed.first;
-    final String body = orderStatusCopy(order.status, order);
-    final String? code = order.pickupCode;
-    _alerts.show(code == null || code.isEmpty ? body : '$body · $code');
+    final ShopRepository? repo = _repository;
+    for (final Order order in changed) {
+      if (repo != null) {
+        unawaited(
+          repo
+              .saveNotification(_user.uid, AppNotification.forStatusChange(order))
+              .then(_recordFailure),
+        );
+      }
+    }
+
+    _alerts.show(AppNotification.forStatusChange(changed.first).body);
   }
 
   void _cancelOrders() {

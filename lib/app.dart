@@ -12,6 +12,7 @@ import 'services/notification_service.dart';
 import 'state/admin_provider.dart';
 import 'state/cart_provider.dart';
 import 'state/catalog_provider.dart';
+import 'state/notification_center.dart';
 import 'state/session_provider.dart';
 
 /// App root.
@@ -83,6 +84,16 @@ class _HighlandersAppState extends State<HighlandersApp> {
             alerts: _alerts,
           ),
         ),
+        // The signed-in user's inbox: the bell badge and the notifications
+        // screen both read from this one live listener. Declared before
+        // AdminProvider, which needs nothing from it, and before
+        // NotificationService, which consults it to dedupe foreground banners.
+        ChangeNotifierProvider<NotificationCenter>(
+          create: (BuildContext context) => NotificationCenter(
+            repository: repository,
+            session: context.read<SessionProvider>(),
+          ),
+        ),
         // The shop-wide view: every order, all stock, all staff. Separate from
         // the session because it describes the café, not one customer.
         //
@@ -90,7 +101,17 @@ class _HighlandersAppState extends State<HighlandersApp> {
         // admin — see RootRouter — because a customer reading the order list is
         // denied by the rules and the resulting error would look like a fault.
         ChangeNotifierProvider<AdminProvider>(
-          create: (_) => AdminProvider(repository: repository, alerts: _alerts),
+          create: (BuildContext context) {
+            final SessionProvider session = context.read<SessionProvider>();
+            return AdminProvider(
+              repository: repository,
+              alerts: _alerts,
+              // Resolved at write time: the provider is built before the session
+              // resolves, and an inbox record only makes sense for a signed-in
+              // admin (the demo/seed account has no inbox).
+              currentUid: () => session.isAdmin ? session.user.uid : null,
+            );
+          },
         ),
         // The cart needs the catalog to resolve names, prices and the fee
         // schedule, and the session for saved addresses.
@@ -116,6 +137,7 @@ class _HighlandersAppState extends State<HighlandersApp> {
             repository: repository,
             session: context.read<SessionProvider>(),
             navigatorKey: _navigatorKey,
+            notifications: context.read<NotificationCenter>(),
           )..init(),
         ),
       ],

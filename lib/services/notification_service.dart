@@ -15,6 +15,7 @@ import '../data/firestore/shop_repository.dart';
 import '../data/models/order.dart';
 import '../features/admin/admin_dashboard_screen.dart';
 import '../features/order_tracking/order_tracking_screen.dart';
+import '../state/notification_center.dart';
 import '../state/session_provider.dart';
 import 'in_app_alert.dart';
 
@@ -129,15 +130,22 @@ class NotificationService extends ChangeNotifier {
     required SessionProvider session,
     required GlobalKey<NavigatorState> navigatorKey,
     MessagingBackend? backend,
+    NotificationCenter? notifications,
   })  : _repository = repository,
         _session = session,
         _navigatorKey = navigatorKey,
-        _backend = backend ?? FcmMessagingBackend();
+        _backend = backend ?? FcmMessagingBackend(),
+        _notifications = notifications;
 
   final ShopRepository _repository;
   final SessionProvider _session;
   final GlobalKey<NavigatorState> _navigatorKey;
   final MessagingBackend _backend;
+
+  /// The live inbox, used to drop a foreground FCM banner for an order the app
+  /// has already announced from its own stream. Optional so a test can build the
+  /// service without the full provider graph.
+  final NotificationCenter? _notifications;
 
   bool _initialised = false;
 
@@ -319,6 +327,14 @@ class NotificationService extends ChangeNotifier {
   // --- message display & routing --------------------------------------------
 
   void _showForegroundBanner(RemoteMessage message) {
+    // A push that arrives while the app is open is usually the relay reporting a
+    // change the app's own order stream has already seen and announced — and
+    // written to the inbox. If a record for this order already exists, the banner
+    // has been (or is about to be) shown from the stream; a second one is noise.
+    // The check is by order id: every notification for an order carries it.
+    final String orderId = _dataString(message, 'orderId');
+    if (_notifications?.hasOrderNotification(orderId) ?? false) return;
+
     final String body = message.notification?.body ?? 'Order update';
     showInAppAlert(_navigatorKey.currentContext, body);
   }
