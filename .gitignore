@@ -39,6 +39,11 @@ app.*.symbols
 # Obfuscation related
 app.*.map.json
 
+# Wrangler's local state for the push relay (KV caches, deploy metadata). It is
+# per-machine and regenerated on the next `wrangler` command, so it stays out of
+# the repo like any other build cache.
+push-relay/.wrangler/
+
 # Firebase per-developer config. google-services.json holds an API key bound to
 # this Firebase project and is downloaded per machine, so it stays out of the
 # repo.

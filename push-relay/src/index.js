@@ -20,6 +20,13 @@
  *     `onOrderStatusChanged` did, minus the definitions trigger latency (up to
  *     ~60s here, the cron granularity).
  *
+ * Besides the push, each change is **backfilled into the recipient's in-app
+ * inbox** (`notifications/{uid}/items`, see `app_notification.dart`). That is
+ * what a closed app needs: the push may be missed or permission-denied, but the
+ * record — and the bell badge it drives — is waiting when the app next opens.
+ * An open app has already written its own record from the live order stream, so
+ * the backfill writes only when the document is absent and never un-reads one.
+ *
  * Free-tier cautions (verified against Cloudflare docs, 2026):
  *   - Cron Triggers fire at most once per minute, are not retried, and have no
  *     failure alerts. A missed run loses nothing: the next poll just picks up
@@ -100,7 +107,7 @@ async function runRelay(env) {
         continue;
       }
       const tokens = await tokensForUids(env, projectId, auth, admins);
-      await pushNewOrder(env, projectId, auth, tokens, order);
+      await pushNewOrder(env, projectId, auth, admins, tokens, order);
       await env.PUSH_STATE.put('o:' + order.id, snapshotOf(order));
       continue;
     }
@@ -247,53 +254,140 @@ async function deleteTokenDoc(env, projectId, auth, token) {
 }
 
 // ---------------------------------------------------------------------------
-// Push content (mirrors functions/src/notifications.ts)
+// Inbox backfill
+//
+// The app writes its own inbox records from the live order stream, so for an
+// *open* app the record is already there and this is a no-op. The relay's
+// backfill exists for the closed-app case: nobody's device is listening, so the
+// record would otherwise never be created, the bell badge would stay at zero,
+// and opening the app later would show nothing.
+//
+// Backfill never touches an existing record: a re-run after the user has read it
+// must not un-read it, and an app-written record is authoritative. Shapes and
+// ids match `lib/data/models/app_notification.dart` exactly
+// (`new-order-<id>` / `order-status-<id>-<status>`), so the two writers collapse
+// onto one document.
 // ---------------------------------------------------------------------------
 
-async function pushNewOrder(env, projectId, auth, tokens, order) {
+async function backfillRecords(env, projectId, auth, uids, itemId, record) {
+  await Promise.all(uids.map((uid) => ensureRecord(env, projectId, auth, uid, itemId, record)));
+}
+
+async function ensureRecord(env, projectId, auth, uid, itemId, record) {
+  if (!uid) return;
+  const url =
+    `${FIRESTORE_API}/projects/${projectId}/databases/(default)/documents/` +
+    `notifications/${encodeURIComponent(uid)}/items/${encodeURIComponent(itemId)}`;
+
+  // Create-only: a present document (written by the app, or read by the user)
+  // wins and is left untouched.
+  const existing = await fetch(url, { headers: { authorization: 'Bearer ' + auth } });
+  if (existing.ok) return;
+  if (existing.status !== 404) {
+    console.error('inbox read failed', existing.status, (await existing.text()).slice(0, 200));
+    return;
+  }
+
+  const fields = {
+    id: { stringValue: itemId },
+    type: { stringValue: record.type },
+    title: { stringValue: record.title },
+    body: { stringValue: record.body },
+    orderId: { stringValue: record.orderId },
+    createdAt: { timestampValue: new Date().toISOString() },
+    read: { booleanValue: false },
+  };
+  if (record.status) fields.status = { stringValue: record.status };
+
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + auth },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    console.error('inbox backfill failed', res.status, (await res.text()).slice(0, 200));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Push content (mirrors app_notification.dart and functions/src/notifications.ts)
+// ---------------------------------------------------------------------------
+
+async function pushNewOrder(env, projectId, auth, adminUids, tokens, order) {
+  const title = 'New order received';
+  const body = newOrderBody(order);
+
+  // Backfill every admin's inbox before pushing, so the badge is already right
+  // when the app opens — even if this device never receives the push.
+  await backfillRecords(env, projectId, auth, adminUids, `new-order-${order.id}`, {
+    type: 'newOrder',
+    title,
+    body,
+    orderId: order.id,
+  });
+
   if (tokens.length === 0) return;
-  const items = order.itemCount;
-  const total = order.subtotal + order.deliveryFee;
-  const customer = order.customerName || 'a customer';
   await sendToTokens(env, projectId, auth, tokens, {
-    title: 'New order',
-    body: `${customer} · ${items} item${items === 1 ? '' : 's'} · ₱${total.toFixed(2)}`,
+    title,
+    body,
     data: { type: 'new_order', orderId: order.id },
   });
 }
 
 async function pushStatusChange(env, projectId, auth, order) {
-  if (order.customerUid.startsWith('seed-') || !order.customerUid) return;
+  if (!order.customerUid || order.customerUid.startsWith('seed-')) return;
   const body = statusCopy(order.status, order);
   if (!body) return;
+
+  const title = 'Highlanders Coffee & Tea';
+  await backfillRecords(env, projectId, auth, [order.customerUid], `order-status-${order.id}-${order.status}`, {
+    type: 'orderStatus',
+    title,
+    body,
+    orderId: order.id,
+    status: order.status,
+  });
+
   const tokens = await tokensForUids(env, projectId, auth, [order.customerUid]);
   if (tokens.length === 0) return;
   await sendToTokens(env, projectId, auth, tokens, {
-    title: 'Highlanders Coffee & Tea',
+    title,
     body,
     data: { type: 'order_status', orderId: order.id, status: order.status },
   });
 }
 
+/** Café-facing line for a new order; carries the order id, like the app's copy. */
+function newOrderBody(order) {
+  const items = order.itemCount;
+  const itemWord = items === 1 ? 'item' : 'items';
+  const customer = (order.customerName || '').trim();
+  const who = customer ? `${customer} · ` : '';
+  return `New Order Received #${order.id} · ${who}${items} ${itemWord} · ₱${(order.subtotal + order.deliveryFee).toFixed(2)}`;
+}
+
 /** Customer-facing line for each pipeline state, or null for no copy. */
 function statusCopy(status, order) {
+  const id = order.id;
   switch (status) {
     case 'pending':
-      return 'We received your order.';
+      return `Your order #${id} was received.`;
     case 'confirmed':
-      return 'Your order is confirmed.';
+      return `Your order #${id} has been confirmed!`;
     case 'preparing':
-      return 'Your order is being prepared.';
+      return `Your order #${id} is being prepared.`;
     case 'ready':
-      return order.fulfillment === 'pickup' ? 'Your order is ready for pickup.' : 'Your order is ready.';
+      return order.fulfillment === 'pickup'
+        ? `Your order #${id} is ready for pickup!`
+        : `Your order #${id} is ready.`;
     case 'outForDelivery':
-      return 'Your order is out for delivery.';
+      return `Your order #${id} is out for delivery.`;
     case 'delivered':
-      return 'Your order has been delivered. Enjoy!';
+      return `Your order #${id} has been delivered. Enjoy!`;
     case 'failedDelivery':
-      return 'Delivery failed — our team will contact you.';
+      return `Delivery for order #${id} failed — our team will contact you.`;
     case 'cancelled':
-      return 'Your order was cancelled.';
+      return `Your order #${id} was cancelled.`;
     default:
       return null;
   }

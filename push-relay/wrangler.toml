@@ -15,7 +15,7 @@ compatibility_date = "2026-10-01"
 # …which prints an id like `9f34a2b1c3d4e5f6a7b8c9d0e1f2a3b4`; paste it below.
 [[kv_namespaces]]
 binding = "PUSH_STATE"
-id = "PASTE_KV_NAMESPACE_ID_HERE"
+id = "60a89c187afe41b084daa5ac9ecef95d"
 
 # Run the relay once a minute — the fastest free-plan Cron Trigger allows.
 # There is no retry: a lost run costs nothing because the next tick resumes
