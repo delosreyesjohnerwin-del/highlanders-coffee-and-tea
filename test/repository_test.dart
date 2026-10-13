@@ -9,6 +9,7 @@ import 'package:highlanders_coffee/data/firestore/serialisation.dart';
 import 'package:highlanders_coffee/data/firestore/shop_repository.dart';
 import 'package:highlanders_coffee/data/firestore/stream_zip.dart';
 import 'package:highlanders_coffee/data/mock/mock_data.dart';
+import 'package:highlanders_coffee/data/models/app_notification.dart';
 import 'package:highlanders_coffee/data/models/coverage.dart';
 import 'package:highlanders_coffee/data/models/menu.dart';
 import 'package:highlanders_coffee/data/models/order.dart';
@@ -1246,6 +1247,102 @@ void main() {
     });
   });
 
+  group('notification inbox', () {
+    AppNotification note(String id, DateTime at, {bool read = false}) => AppNotification(
+          id: id,
+          type: AppNotificationType.orderStatus,
+          title: 'Highlanders Coffee & Tea',
+          body: 'Your order #$id has been confirmed!',
+          orderId: id,
+          status: OrderStatus.confirmed,
+          createdAt: at,
+          read: read,
+        );
+
+    test('a saved record reads back through the inbox, newest first', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      await repo.saveNotification('u-marco', note('C', DateTime(2026, 1, 3)));
+      await repo.saveNotification('u-marco', note('B', DateTime(2026, 1, 2)));
+
+      final List<AppNotification> items = await repo.loadNotifications('u-marco');
+      expect(items.map((AppNotification n) => n.id), <String>['C', 'B', 'A']);
+    });
+
+    test('inboxes are per uid', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+
+      expect(await repo.loadNotifications('u-marco'), hasLength(1));
+      expect(await repo.loadNotifications('u-ana'), isEmpty);
+    });
+
+    test('a deterministic id upserts instead of duplicating', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      // The app and the relay both write the same change; it must collapse.
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+
+      expect(await repo.loadNotifications('u-marco'), hasLength(1));
+    });
+
+    test('re-saving a read record does not un-read it', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      await repo.markNotificationRead('u-marco', 'A');
+      // The relay backfills the same id later with read=false; the user already
+      // opened it, so the stored flag must win.
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+
+      final List<AppNotification> items = await repo.loadNotifications('u-marco');
+      expect(items.single.read, isTrue);
+    });
+
+    test('markAllNotificationsRead clears the whole inbox', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      await repo.saveNotification('u-marco', note('B', DateTime(2026, 1, 2)));
+
+      await repo.markAllNotificationsRead('u-marco');
+
+      final List<AppNotification> items = await repo.loadNotifications('u-marco');
+      expect(items.every((AppNotification n) => n.read), isTrue);
+    });
+
+    test('the live stream re-emits on every change', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final Stream<List<AppNotification>> stream = repo.watchNotifications('u-marco');
+      final Future<List<AppNotification>> first = stream.first;
+      await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      expect((await first).single.id, 'A');
+
+      final Future<List<AppNotification>> second = stream.first;
+      await repo.markNotificationRead('u-marco', 'A');
+      expect((await second).single.read, isTrue);
+    });
+
+    test('a failed write is reported like every other repository write', () async {
+      final MemoryShopRepository repo = MemoryShopRepository()..failWrites = true;
+      addTearDown(repo.dispose);
+
+      final WriteFailure? failure = await repo.saveNotification('u-marco', note('A', DateTime(2026, 1, 1)));
+      expect(failure, isNotNull);
+      expect(failure!.operation, contains('save notification'));
+    });
+  });
+
   group('collection names match the security rules', () {
     test('every path is one the rules actually name', () {
       // A typo here does not fail loudly. The catch-all at the bottom of
@@ -1265,6 +1362,7 @@ void main() {
         'paymentMethods',
         'paymentGatewayCustomers',
         'notificationTokens',
+        'notifications',
         'users',
       ];
 
@@ -1281,6 +1379,7 @@ void main() {
         FirestorePaths.paymentMethods,
         FirestorePaths.paymentGatewayCustomers,
         FirestorePaths.notificationTokens,
+        FirestorePaths.notifications,
       ];
 
       for (final String name in used) {

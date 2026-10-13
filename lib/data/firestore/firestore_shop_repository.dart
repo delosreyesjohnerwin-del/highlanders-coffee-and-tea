@@ -4,6 +4,7 @@
 // clause.
 import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 
+import '../models/app_notification.dart';
 import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
@@ -550,6 +551,69 @@ class FirestoreShopRepository implements ShopRepository {
   Future<WriteFailure?> deleteNotificationToken(String uid, String token) => _guard(
         'unregister device for notifications',
         () => _collection(FirestorePaths.notificationTokens).doc(token).delete(),
+      );
+
+  // --- notification inbox -------------------------------------------------
+
+  /// One user's inbox: `notifications/{uid}/items`.
+  CollectionReference<Map<String, dynamic>> _inbox(String uid) =>
+      _collection(FirestorePaths.notifications)
+          .doc(uid)
+          .collection(FirestorePaths.notificationItems);
+
+  /// Newest first. Sorted client-side rather than with `orderBy`, matching
+  /// [watchStaffRecords]: the collection is small, and a server sort on an ISO
+  /// string plus the client's local-time conversion is more fragile than sorting
+  /// the parsed values here.
+  List<AppNotification> _sortedInbox(QuerySnapshot<Map<String, dynamic>> snapshot) =>
+      snapshot.docs
+          .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+              AppNotificationSerialisation.fromMap(d.data(), d.id))
+          .toList()
+        ..sort((AppNotification a, AppNotification b) => b.createdAt.compareTo(a.createdAt));
+
+  @override
+  Stream<List<AppNotification>> watchNotifications(String uid) =>
+      _inbox(uid).snapshots().map(_sortedInbox);
+
+  @override
+  Future<List<AppNotification>> loadNotifications(String uid) async =>
+      _sortedInbox(await _inbox(uid).get());
+
+  @override
+  Future<WriteFailure?> saveNotification(String uid, AppNotification notification) => _guard(
+        'save notification ${notification.id}',
+        // `merge: true` so a re-save of an existing record only ever updates the
+        // content fields and leaves `read` alone — the caller cannot see the
+        // stored flag, and set-without-merge would reset it to false.
+        () => _inbox(uid).doc(notification.id).set(
+              notification.toMap(),
+              SetOptions(merge: true),
+            ),
+      );
+
+  @override
+  Future<WriteFailure?> markNotificationRead(String uid, String itemId) => _guard(
+        'mark notification read',
+        () => _inbox(uid).doc(itemId).set(
+              <String, dynamic>{'read': true},
+              SetOptions(merge: true),
+            ),
+      );
+
+  @override
+  Future<WriteFailure?> markAllNotificationsRead(String uid) => _guard(
+        'mark all notifications read',
+        () async {
+          final QuerySnapshot<Map<String, dynamic>> snapshot = await _inbox(uid).get();
+          if (snapshot.docs.isEmpty) return;
+          final WriteBatch batch = _db.batch();
+          for (final DocumentSnapshot<Map<String, dynamic>> doc in snapshot.docs) {
+            if (doc.data()?['read'] == true) continue;
+            batch.set(doc.reference, <String, dynamic>{'read': true}, SetOptions(merge: true));
+          }
+          await batch.commit();
+        },
       );
 
   // --- seed ---------------------------------------------------------------

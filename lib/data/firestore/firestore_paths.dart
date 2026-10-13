@@ -61,6 +61,19 @@ class FirestorePaths {
   /// rules block denies everything.
   static const String paymentGatewayCustomers = 'paymentGatewayCustomers';
 
+  /// Per-user notification inbox, as a nested collection.
+  ///
+  /// Shape: `notifications/{uid}/items/{itemId}`. Nested rather than flat so the
+  /// rules can scope a whole subtree to its owner (`isOwner(uid) || isAdmin()`)
+  /// without a `uid` field on every document, and so a listener on one inbox
+  /// cannot leak another's. See [notificationItems] for the leaf collection and
+  /// `app_notification.dart` for why the item ids are deterministic.
+  static const String notifications = 'notifications';
+
+  /// The leaf collection inside one user's inbox document. Not a top-level
+  /// collection — its full path is `notifications/{uid}/items`.
+  static const String notificationItems = 'items';
+
   /// FCM device registrations, keyed by the device token itself.
   ///
   /// Written by the app when a signed-in user grants notification permission

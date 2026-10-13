@@ -1,3 +1,4 @@
+import '../models/app_notification.dart';
 import '../models/coverage.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
@@ -127,6 +128,33 @@ abstract class ShopRepository {
 
   /// Removes a device token registration.
   Future<WriteFailure?> deleteNotificationToken(String uid, String token);
+
+  // --- notification inbox -------------------------------------------------
+
+  /// Live inbox for [uid], newest first.
+  ///
+  /// Stored at `notifications/{uid}/items/{itemId}`. No `orderBy`: an `orderBy`
+  /// on a nested collection needs no index by itself, but the same pattern used
+  /// elsewhere in this layer (see [loadShiftEvents]) sorts the parsed values
+  /// client-side rather than trusting server order, so a record written by the
+  /// relay and one written by the app interleave correctly.
+  Stream<List<AppNotification>> watchNotifications(String uid);
+
+  /// One-shot read of [uid]'s inbox, newest first.
+  Future<List<AppNotification>> loadNotifications(String uid);
+
+  /// Upserts a record under [uid], keyed by [AppNotification.id].
+  ///
+  /// Deterministic ids mean the app and the relay write the same document. An
+  /// existing record's `read` flag is preserved — re-saving the same change must
+  /// not un-read a notification the user already opened.
+  Future<WriteFailure?> saveNotification(String uid, AppNotification notification);
+
+  /// Marks one inbox record read.
+  Future<WriteFailure?> markNotificationRead(String uid, String itemId);
+
+  /// Marks every record in [uid]'s inbox read.
+  Future<WriteFailure?> markAllNotificationsRead(String uid);
 
   // --- seed ---------------------------------------------------------------
 

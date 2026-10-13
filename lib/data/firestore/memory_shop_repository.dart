@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/app_notification.dart';
 import '../models/menu.dart';
 import '../models/order.dart';
 import '../models/payment.dart';
@@ -438,6 +439,78 @@ class MemoryShopRepository implements ShopRepository {
     return null;
   }
 
+  // --- notification inbox -------------------------------------------------
+
+  /// One inbox per uid, plus a broadcast controller per uid so a listener on one
+  /// customer's inbox is never woken by another's write. Kept out of
+  /// [AdminSnapshot] because it is read on its own by [NotificationCenter].
+  final Map<String, List<AppNotification>> _notificationsByUid = <String, List<AppNotification>>{};
+  final Map<String, StreamController<List<AppNotification>>> _notificationControllers =
+      <String, StreamController<List<AppNotification>>>{};
+
+  StreamController<List<AppNotification>> _controllerFor(String uid) =>
+      _notificationControllers.putIfAbsent(
+        uid,
+        () => StreamController<List<AppNotification>>.broadcast(),
+      );
+
+  /// Newest first, so the stream and the one-shot read agree on order.
+  List<AppNotification> _sortedNotifications(String uid) =>
+      List<AppNotification>.from(_notificationsByUid[uid] ?? const <AppNotification>[])
+        ..sort((AppNotification a, AppNotification b) => b.createdAt.compareTo(a.createdAt));
+
+  void _emitNotifications(String uid) => _controllerFor(uid).add(_sortedNotifications(uid));
+
+  @override
+  Stream<List<AppNotification>> watchNotifications(String uid) => _controllerFor(uid).stream;
+
+  @override
+  Future<List<AppNotification>> loadNotifications(String uid) async =>
+      List<AppNotification>.unmodifiable(_sortedNotifications(uid));
+
+  @override
+  Future<WriteFailure?> saveNotification(String uid, AppNotification notification) async {
+    if (failWrites) return _maybeFail('save notification ${notification.id}');
+
+    final List<AppNotification> existing = _notificationsByUid[uid] ?? <AppNotification>[];
+    final int i = existing.indexWhere((AppNotification n) => n.id == notification.id);
+    if (i >= 0) {
+      // Preserve the stored read flag: the writer cannot see it, so an upsert of
+      // the same deterministic id must not un-read a notification the user
+      // already opened.
+      existing[i] = notification.copyWith(read: existing[i].read);
+    } else {
+      existing.add(notification);
+    }
+    _notificationsByUid[uid] = existing;
+    _emitNotifications(uid);
+    return null;
+  }
+
+  @override
+  Future<WriteFailure?> markNotificationRead(String uid, String itemId) async {
+    if (failWrites) return _maybeFail('mark notification read');
+
+    final List<AppNotification> existing = _notificationsByUid[uid] ?? <AppNotification>[];
+    final int i = existing.indexWhere((AppNotification n) => n.id == itemId);
+    if (i < 0) return null;
+    existing[i] = existing[i].copyWith(read: true);
+    _emitNotifications(uid);
+    return null;
+  }
+
+  @override
+  Future<WriteFailure?> markAllNotificationsRead(String uid) async {
+    if (failWrites) return _maybeFail('mark all notifications read');
+
+    final List<AppNotification> existing = _notificationsByUid[uid] ?? <AppNotification>[];
+    if (existing.isEmpty) return null;
+    _notificationsByUid[uid] =
+        <AppNotification>[for (final AppNotification n in existing) n.copyWith(read: true)];
+    _emitNotifications(uid);
+    return null;
+  }
+
   /// Tokens registered for [uid]. The app never reads tokens back, so this is
   /// only for tests and diagnostics.
   @visibleForTesting
@@ -462,5 +535,9 @@ class MemoryShopRepository implements ShopRepository {
     await _catalogController.close();
     await _adminController.close();
     await _staffRecordsController.close();
+    for (final StreamController<List<AppNotification>> c in _notificationControllers.values) {
+      await c.close();
+    }
+    _notificationControllers.clear();
   }
 }

@@ -8,6 +8,7 @@ import '../models/settings.dart';
 import '../models/shift_event.dart';
 import '../models/staff.dart';
 import '../models/staff_record.dart';
+import '../models/app_notification.dart';
 
 /// Firestore (de)serialisation for the domain models.
 ///
@@ -563,5 +564,40 @@ extension PaymentAccountSerialisation on PaymentAccount {
         linkedAt: _toDate(_body(raw)['linkedAt']) ?? DateTime.now(),
         gatewayId: _toStr(_body(raw)['gatewayId']),
         cardBrand: _toStr(_body(raw)['cardBrand']),
+      );
+}
+
+// --- AppNotification ------------------------------------------------------
+//
+// A stored inbox record. `read` defaults to false on read so a document written
+// by the relay (which never sets it) shows up unread rather than silently
+// pre-read. `createdAt` pins to now on a damaged document so it sorts to the top
+// of the inbox instead of the epoch.
+
+extension AppNotificationSerialisation on AppNotification {
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'id': id,
+        'type': type.name,
+        'title': title,
+        'body': body,
+        'orderId': orderId,
+        if (status != null) 'status': status!.name,
+        'createdAt': _date(createdAt),
+        'read': read,
+      };
+
+  static AppNotification fromMap(Map<String, dynamic>? raw, String fallbackId) => AppNotification(
+        id: _toStr(_body(raw)['id']) ?? fallbackId,
+        type: _enumByName(_body(raw)['type'], AppNotificationType.values,
+            AppNotificationType.orderStatus),
+        title: _toStr(_body(raw)['title']) ?? 'Notification',
+        body: _body(raw)['body'] is String ? _body(raw)['body'] as String : '',
+        orderId: _toStr(_body(raw)['orderId']) ?? '',
+        status: _body(raw)['status'] is String
+            ? _enumByName(_body(raw)['status'], OrderStatus.values, OrderStatus.pending,
+                labelOf: (OrderStatus s) => s.label)
+            : null,
+        createdAt: _toDate(_body(raw)['createdAt']) ?? DateTime.now(),
+        read: _toBool(_body(raw)['read']) ?? false,
       );
 }

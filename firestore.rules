@@ -216,7 +216,7 @@ service cloud.firestore {
     //
     // One document per installed app, keyed by the FCM device token and scoped
     // to the signed-in user, written by the app itself when it registers for
-    // push. The `onOrderCreated` / `onOrderUpdated` Cloud Functions read it
+    // push. The `onOrderCreated` / `onOrderStatusChanged` Cloud Functions read it
     // through the admin SDK (rules do not apply) to find whose devices to push
     // to, so no client read rule is needed — and no client should be able to
     // read the list of who else has the app installed, so there is none. A
@@ -226,6 +226,24 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // --- notifications ---------------------------------------------------
+    //
+    // The in-app inbox, one nested collection per user:
+    // `notifications/{uid}/items/{itemId}`. Nesting is what keeps the rule
+    // simple: the whole subtree belongs to `{uid}`, so no per-document `uid`
+    // field is needed and a listener on one inbox cannot see another's.
+    //
+    // `isAdmin()` is allowed to read and write across users on purpose. The café
+    // writes the customer's status record the moment it advances an order (so
+    // the badge updates even before the Cloudflare relay ticks), and an admin
+    // device writes its own new-order records. The relay uses the admin SDK
+    // (rules do not apply) to backfill for a closed app.
+    match /notifications/{uid}/items/{itemId} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create, update: if isOwner(uid) || isAdmin();
+      allow delete: if isOwner(uid) || isAdmin();
     }
 
     // Two "Home" entries is possible: the rules scope addresses by uid, not by
