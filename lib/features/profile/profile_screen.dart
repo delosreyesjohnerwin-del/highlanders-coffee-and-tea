@@ -9,9 +9,11 @@ import '../../core/widgets/bw_menu_row.dart';
 import '../../core/widgets/bw_stat.dart';
 import '../../data/models/order.dart';
 import '../../services/notification_service.dart';
+import '../../state/notification_center.dart';
 import '../../state/session_provider.dart';
 import '../address/saved_addresses_screen.dart';
 import '../admin/admin_dashboard_screen.dart';
+import '../notifications/notifications_screen.dart';
 import '../payment_methods/payment_methods_screen.dart';
 
 /// Profile: solid black header card with avatar, name, email and a
@@ -22,6 +24,7 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final AppUser user = context.watch<SessionProvider>().user;
+    final int unread = context.watch<NotificationCenter>().unreadCount;
 
     return Scaffold(
       body: SafeArea(
@@ -80,8 +83,16 @@ class ProfileScreen extends StatelessWidget {
                   BwMenuGroup(
                     children: <Widget>[
                       BwMenuRow(
-                        icon: Icons.notifications_none_rounded,
+                        icon: Icons.notifications_active_outlined,
                         label: 'Notifications',
+                        trailingText: unread > 0 ? '$unread new' : null,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(builder: (_) => const NotificationsScreen()),
+                        ),
+                      ),
+                      BwMenuRow(
+                        icon: Icons.push_pin_outlined,
+                        label: 'Push notifications',
                         trailing: Switch(
                           value: context.watch<NotificationService>().isEnabled,
                           onChanged: (bool value) async {

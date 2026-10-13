@@ -9,6 +9,7 @@ import '../../core/widgets/bw_button.dart';
 import '../../data/models/order.dart';
 import '../../state/admin_provider.dart';
 import '../../state/session_provider.dart';
+import '../notifications/widgets/notification_bell.dart';
 import 'sections/admin_inventory_section.dart';
 import 'sections/admin_orders_section.dart';
 import 'sections/admin_overview_section.dart';
@@ -199,6 +200,7 @@ class _AdminTopBar extends StatelessWidget {
           ),
           if (open > 0)
             BwBadge(label: '$open open', variant: BwBadgeVariant.solid, dense: true),
+          const NotificationBell(),
           if (signOut != null) ...<Widget>[
             const SizedBox(width: BwSpacing.xs),
             signOut!,

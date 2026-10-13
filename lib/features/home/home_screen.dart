@@ -13,6 +13,7 @@ import '../../data/models/order.dart';
 import '../../state/catalog_provider.dart';
 import '../../state/session_provider.dart';
 import '../menu/menu_item_detail_screen.dart';
+import '../notifications/widgets/notification_bell.dart';
 import 'widgets/menu_item_card.dart';
 import 'widgets/promo_carousel.dart';
 
@@ -350,7 +351,9 @@ class _LocationHeader extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: BwSpacing.md),
+          const SizedBox(width: BwSpacing.sm),
+          const NotificationBell(),
+          const SizedBox(width: BwSpacing.xs),
           GestureDetector(
             onTap: () {},
             child: BwAvatar(initials: BwAvatar.initialsOf(user.fullName), size: 42),

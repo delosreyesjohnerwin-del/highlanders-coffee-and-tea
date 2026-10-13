@@ -35,6 +35,21 @@ class Fmt {
   /// 3:24 PM
   static String time(DateTime value) => _time.format(value);
 
+  /// "now" / "5 min ago" / "3 h ago" / "2 d ago" / "1 Oct 2026".
+  ///
+  /// Used by the notifications inbox. Everything is compared in UTC so a stored
+  /// server timestamp and a locally-clocked "now" do not disagree by the
+  /// timezone offset. [now] is injectable so the tests do not depend on the wall
+  /// clock.
+  static String relative(DateTime value, {DateTime? now}) {
+    final Duration d = (now ?? DateTime.now()).toUtc().difference(value.toUtc());
+    if (d.inSeconds < 45) return 'now';
+    if (d.inMinutes < 60) return '${d.inMinutes} min ago';
+    if (d.inHours < 24) return '${d.inHours} h ago';
+    if (d.inDays < 7) return '${d.inDays} d ago';
+    return date(value.toLocal());
+  }
+
   /// HL-2601-4820
   static String orderId(String raw) {
     if (raw.length >= 14) return raw;
