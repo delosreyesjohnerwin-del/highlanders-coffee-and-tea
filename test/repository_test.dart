@@ -16,6 +16,7 @@ import 'package:highlanders_coffee/data/models/payment.dart';
 import 'package:highlanders_coffee/data/models/settings.dart';
 import 'package:highlanders_coffee/data/models/shift_event.dart';
 import 'package:highlanders_coffee/data/models/staff.dart';
+import 'package:highlanders_coffee/data/models/staff_record.dart';
 import 'package:highlanders_coffee/services/staff_qr.dart';
 import 'package:highlanders_coffee/state/admin_provider.dart';
 import 'package:highlanders_coffee/state/catalog_provider.dart';
@@ -301,6 +302,69 @@ void main() {
       expect(restored.staffName, 'Mara Ilagan');
       expect(restored.type, ShiftEventType.clockOut);
       expect(restored.method, ShiftEventMethod.qr);
+    });
+
+    test('an open staff record round-trips without inventing a time out', () {
+      final StaffRecord original = StaffRecord(
+        id: 'rec-1',
+        staffId: 's-3',
+        staffName: 'Mara Ilagan',
+        role: StaffRole.barista,
+        dateKey: '2026-10-03',
+        timeIn: DateTime(2026, 10, 3, 8, 5),
+      );
+
+      final StaffRecord restored = StaffRecordSerialisation.fromMap(original.toMap(), 'wrong-id');
+
+      expect(restored.id, 'rec-1');
+      expect(restored.staffId, 's-3');
+      expect(restored.staffName, 'Mara Ilagan');
+      expect(restored.role, StaffRole.barista);
+      expect(restored.dateKey, '2026-10-03');
+      expect(restored.timeOut, isNull);
+      expect(restored.status, StaffRecordStatus.active);
+      expect(restored.isOpen, isTrue);
+      // An open session omits timeOut entirely rather than writing a null, so a
+      // reader can tell "still running" from "closed at the epoch".
+      expect(original.toMap().containsKey('timeOut'), isFalse);
+    });
+
+    test('a closed staff record keeps its time out and method', () {
+      final StaffRecord original = StaffRecord(
+        id: 'rec-2',
+        staffId: 's-2',
+        staffName: 'Rodel Bautista',
+        role: StaffRole.rider,
+        dateKey: '2026-10-03',
+        timeIn: DateTime(2026, 10, 3, 8),
+        timeOut: DateTime(2026, 10, 3, 17, 30),
+        status: StaffRecordStatus.completed,
+        method: StaffRecordMethod.manual,
+      );
+
+      final StaffRecord restored = StaffRecordSerialisation.fromMap(original.toMap(), 'wrong-id');
+
+      expect(restored.timeOut, isNotNull);
+      expect(restored.status, StaffRecordStatus.completed);
+      expect(restored.isOpen, isFalse);
+      expect(restored.method, StaffRecordMethod.manual);
+      expect(restored.worked, const Duration(hours: 9, minutes: 30));
+    });
+
+    test('a damaged staff record falls back to a sane open session', () {
+      final StaffRecord restored = StaffRecordSerialisation.fromMap(<String, dynamic>{
+        'staffId': 's-9',
+        'timeIn': 'not-a-date',
+      }, 'rec-fallback');
+
+      expect(restored.id, 'rec-fallback');
+      expect(restored.staffId, 's-9');
+      expect(restored.staffName, 'Staff');
+      expect(restored.status, StaffRecordStatus.active);
+      expect(restored.isOpen, isTrue);
+      // The day key is derived from the clock-in rather than left blank, so the
+      // rounded timestamp still groups under a real day.
+      expect(restored.dateKey, isNotEmpty);
     });
 
     test('store settings keep the open flag and the fee', () {
@@ -840,6 +904,90 @@ void main() {
       ]);
     });
 
+    test('a clock-in opens a staff record and a clock-out closes the same row', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.firstWhere((StaffMember s) => !s.shift.isWorking);
+      await admin.ensureStaffQr(member.id);
+
+      final Uri uri = staffQrUri(admin.staffById(member.id)!)!;
+
+      admin.clockByToken(uri.toString());
+      await settle();
+
+      // Clock-in: exactly one open session row.
+      List<StaffRecord> records = await repo.loadStaffRecords();
+      expect(records, hasLength(1));
+      expect(records.single.staffId, member.id);
+      expect(records.single.staffName, member.name);
+      expect(records.single.status, StaffRecordStatus.active);
+      expect(records.single.timeOut, isNull);
+      expect(records.single.method, StaffRecordMethod.qr);
+      final String rowId = records.single.id;
+
+      admin.clockByToken(uri.toString());
+      await settle();
+
+      // Clock-out: the same row, closed in place — not a second row.
+      records = await repo.loadStaffRecords();
+      expect(records, hasLength(1), reason: 'the clock-out must update the clock-in row');
+      expect(records.single.id, rowId);
+      expect(records.single.status, StaffRecordStatus.completed);
+      expect(records.single.timeOut, isNotNull);
+    });
+
+    test('a repeated clock-in does not stack duplicate shifts', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.firstWhere((StaffMember s) => !s.shift.isWorking);
+
+      admin.setShift(member.id, ShiftStatus.onShift);
+      admin.setShift(member.id, ShiftStatus.onShift);
+      await settle();
+
+      final List<StaffRecord> records = await repo.loadStaffRecords();
+      expect(records, hasLength(1), reason: 'a same-state write is not a new session');
+    });
+
+    test('a badge for a member with no token here reports it distinctly', () async {
+      final MemoryShopRepository repo = MemoryShopRepository();
+      addTearDown(repo.dispose);
+
+      // The default roster has no badges minted, so a well-formed badge names a
+      // real member but cannot verify. That is "no badge on file", not a
+      // stale/expired badge — the two send the operator to different fixes.
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.first;
+
+      final StaffClockResult result = admin.clockByToken(
+        staffQrUriFor(staffId: member.id, token: 'deadbeef').toString(),
+      );
+
+      expect(result.outcome, StaffClockOutcome.badgeNotIssued);
+      expect(result.isSuccess, isFalse);
+      expect(admin.staffById(member.id)!.shift.isWorking, member.shift.isWorking);
+    });
+
+    test('a live roster is not minted against before it has loaded', () async {
+      final _UnloadedLiveRepository repo = _UnloadedLiveRepository();
+      addTearDown(repo.dispose);
+
+      final AdminProvider admin = AdminProvider(repository: repo);
+      final StaffMember member = admin.staff.first;
+      expect(member.qrToken, isNull);
+
+      await admin.ensureStaffQr(member.id);
+
+      // The roster in hand is the bundled mock, but the real one has not been
+      // read yet. Minting now would overwrite a token that may already be
+      // printed, so the provider must refuse until the first snapshot lands.
+      expect(admin.staffById(member.id)!.qrToken, isNull);
+    });
+
     test('regenerating a badge invalidates the old token', () async {
       final MemoryShopRepository repo = MemoryShopRepository();
       addTearDown(repo.dispose);
@@ -1111,6 +1259,7 @@ void main() {
         'orders',
         'staffMembers',
         'shiftEvents',
+        'staffRecords',
         'drivers',
         'addresses',
         'paymentMethods',
@@ -1127,6 +1276,7 @@ void main() {
         FirestorePaths.orders,
         FirestorePaths.staffMembers,
         FirestorePaths.shiftEvents,
+        FirestorePaths.staffRecords,
         FirestorePaths.addresses,
         FirestorePaths.paymentMethods,
         FirestorePaths.paymentGatewayCustomers,
@@ -1158,4 +1308,15 @@ void main() {
       expect(FirestorePaths.paymentMethodDoc('u-marco', 'pm-gcash'), 'u-marco_pm-gcash');
     });
   });
+}
+
+/// A "live" repository whose admin stream never emits.
+///
+/// Stands in for the window between an admin signing in and the first roster
+/// snapshot arriving: [isLive] is true, so the provider knows a backend owns the
+/// roster, but nothing has been read yet, so it must not mint badges against the
+/// bundled mock roster.
+class _UnloadedLiveRepository extends MemoryShopRepository {
+  @override
+  bool get isLive => true;
 }

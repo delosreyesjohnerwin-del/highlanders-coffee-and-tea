@@ -8,6 +8,7 @@ import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/shift_event.dart';
 import '../models/staff.dart';
+import '../models/staff_record.dart';
 import 'firestore_errors.dart';
 import 'shop_repository.dart';
 
@@ -256,6 +257,37 @@ class MemoryShopRepository implements ShopRepository {
     return events.take(limit).toList(growable: false);
   }
 
+  /// Attendance sessions, newest first. Kept out of [AdminSnapshot] like the
+  /// transition log: the record table streams it on its own.
+  final List<StaffRecord> _staffRecords = <StaffRecord>[];
+  final StreamController<List<StaffRecord>> _staffRecordsController =
+      StreamController<List<StaffRecord>>.broadcast();
+
+  /// Newest first, so both the stream and the one-shot read agree on order.
+  List<StaffRecord> _sortedStaffRecords() => List<StaffRecord>.from(_staffRecords)
+    ..sort((StaffRecord a, StaffRecord b) => b.timeIn.compareTo(a.timeIn));
+
+  @override
+  Stream<List<StaffRecord>> watchStaffRecords() => _staffRecordsController.stream;
+
+  @override
+  Future<List<StaffRecord>> loadStaffRecords() async =>
+      List<StaffRecord>.unmodifiable(_sortedStaffRecords());
+
+  @override
+  Future<WriteFailure?> saveStaffRecord(StaffRecord record) async {
+    if (failWrites) return _maybeFail('save staff record for ${record.staffName}');
+
+    final int i = _staffRecords.indexWhere((StaffRecord r) => r.id == record.id);
+    if (i >= 0) {
+      _staffRecords[i] = record;
+    } else {
+      _staffRecords.add(record);
+    }
+    _staffRecordsController.add(_sortedStaffRecords());
+    return null;
+  }
+
   // --- settings -----------------------------------------------------------
 
   @override
@@ -429,5 +461,6 @@ class MemoryShopRepository implements ShopRepository {
   Future<void> dispose() async {
     await _catalogController.close();
     await _adminController.close();
+    await _staffRecordsController.close();
   }
 }

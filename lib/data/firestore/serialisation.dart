@@ -7,6 +7,7 @@ import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/shift_event.dart';
 import '../models/staff.dart';
+import '../models/staff_record.dart';
 
 /// Firestore (de)serialisation for the domain models.
 ///
@@ -463,6 +464,41 @@ extension ShiftEventSerialisation on ShiftEvent {
         // epoch, so a damaged document sorts to the top instead of the bottom.
         at: _toDate(_body(raw)['at']) ?? DateTime.now(),
         method: _enumByName(_body(raw)['method'], ShiftEventMethod.values, ShiftEventMethod.qr),
+      );
+}
+
+// --- StaffRecord ----------------------------------------------------------
+
+extension StaffRecordSerialisation on StaffRecord {
+  Map<String, dynamic> toMap() => <String, dynamic>{
+        'id': id,
+        'staffId': staffId,
+        'staffName': staffName,
+        'role': role.name,
+        'dateKey': dateKey,
+        'timeIn': _date(timeIn),
+        // Omitted while the shift is still running, so an open session reads
+        // back as "no time-out yet" rather than an explicit null.
+        if (timeOut != null) 'timeOut': _date(timeOut!),
+        'status': status.name,
+        'method': method.name,
+      };
+
+  static StaffRecord fromMap(Map<String, dynamic>? raw, String fallbackId) => StaffRecord(
+        id: _toStr(_body(raw)['id']) ?? fallbackId,
+        staffId: _toStr(_body(raw)['staffId']) ?? '',
+        staffName: _toStr(_body(raw)['staffName']) ?? 'Staff',
+        role: _enumByName(_body(raw)['role'], StaffRole.values, StaffRole.barista,
+            labelOf: (StaffRole r) => r.label),
+        // A missing day key is derived from the clock-in rather than left blank,
+        // so a hand-written document still groups under the right day.
+        dateKey: _toStr(_body(raw)['dateKey']) ??
+            StaffRecord.dateKeyFor(_toDate(_body(raw)['timeIn']) ?? DateTime.now()),
+        timeIn: _toDate(_body(raw)['timeIn']) ?? DateTime.now(),
+        timeOut: _toDate(_body(raw)['timeOut']),
+        status: _enumByName(_body(raw)['status'], StaffRecordStatus.values, StaffRecordStatus.active,
+            labelOf: (StaffRecordStatus s) => s.label),
+        method: _enumByName(_body(raw)['method'], StaffRecordMethod.values, StaffRecordMethod.qr),
       );
 }
 

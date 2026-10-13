@@ -38,6 +38,15 @@ class FirestorePaths {
   /// use, and it keeps every collection name in one flat list to audit.
   static const String shiftEvents = 'shiftEvents';
 
+  /// Staff attendance sessions: one document per shift, opened by a clock-in and
+  /// closed by the matching clock-out.
+  ///
+  /// Distinct from [shiftEvents]: that collection is the append-only transition
+  /// log behind one member's "Recent shifts" timeline, while this is the mutable
+  /// session row the Staff Record table prints. A session is updated in place on
+  /// clock-out, which a transition event can never be.
+  static const String staffRecords = 'staffRecords';
+
   /// Saved delivery addresses. Keyed by uid.
   static const String addresses = 'addresses';
 
@@ -85,4 +94,8 @@ class FirestorePaths {
   /// ([mintShiftEventId]) so both the Firestore and in-memory repositories key
   /// on the same value.
   static String shiftEventDoc(String eventId) => eventId;
+
+  /// Staff-record document ids are minted by the client
+  /// ([mintStaffRecordId]) for the same reason as [shiftEventDoc].
+  static String staffRecordDoc(String recordId) => recordId;
 }

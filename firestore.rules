@@ -165,6 +165,14 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // The Staff Record sessions: one document per shift, opened by a clock-in and
+    // closed by the matching clock-out. Distinct from `shiftEvents` above — that
+    // is the append-only transition log, this is the mutable session row the
+    // record table prints. Admin-only for the same reason: names and times.
+    match /staffRecords/{recordId} {
+      allow read, write: if isAdmin();
+    }
+
     // --- drivers ---------------------------------------------------------
     //
     // Kept for per-rider documents (live location, last seen). Distinct from

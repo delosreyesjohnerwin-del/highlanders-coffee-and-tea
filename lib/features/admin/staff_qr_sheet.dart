@@ -40,12 +40,24 @@ class _StaffQrThumbnailState extends State<StaffQrThumbnail> {
   @override
   void initState() {
     super.initState();
-    if (widget.member.qrToken == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.read<AdminProvider>().ensureStaffQr(widget.member.id);
-      });
-    }
+    _requestIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(StaffQrThumbnail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // A live roster can land after this thumbnail's first build, replacing the
+    // member with one whose token is not known yet. `initState` has already run
+    // by then, so the request has to be re-made here or the badge never appears.
+    if (widget.member.qrToken != oldWidget.member.qrToken) _requestIfNeeded();
+  }
+
+  void _requestIfNeeded() {
+    if (widget.member.qrToken != null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AdminProvider>().ensureStaffQr(widget.member.id);
+    });
   }
 
   @override
@@ -357,6 +369,11 @@ class _StaffQrSheetState extends State<_StaffQrSheet> {
                 style: const TextStyle(fontSize: 12, color: BwColors.textMuted),
               ),
             ],
+            const SizedBox(height: BwSpacing.xs),
+            const Text(
+              'Badges do not expire — this code stays valid until you press Regenerate.',
+              style: TextStyle(fontSize: 11.5, height: 1.35, color: BwColors.textMuted),
+            ),
 
             const SizedBox(height: BwSpacing.lg),
             Row(

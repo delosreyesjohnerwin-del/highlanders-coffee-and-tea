@@ -11,6 +11,7 @@ import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/shift_event.dart';
 import '../models/staff.dart';
+import '../models/staff_record.dart';
 import 'firestore_errors.dart';
 import 'firestore_paths.dart';
 import 'serialisation.dart';
@@ -348,6 +349,43 @@ class FirestoreShopRepository implements ShopRepository {
 
     return events.take(limit).toList(growable: false);
   }
+
+  @override
+  Stream<List<StaffRecord>> watchStaffRecords() => _collection(FirestorePaths.staffRecords)
+      .snapshots()
+      .map((QuerySnapshot<Map<String, dynamic>> s) {
+        // No `orderBy`: see loadShiftEvents — an orderBy on a field plus the
+        // client-side timezone conversion is more fragile than sorting the
+        // parsed values here, and the collection is small.
+        final List<StaffRecord> records = s.docs
+            .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+                StaffRecordSerialisation.fromMap(d.data(), d.id))
+            .toList()
+          ..sort((StaffRecord a, StaffRecord b) => b.timeIn.compareTo(a.timeIn));
+        return records;
+      });
+
+  @override
+  Future<List<StaffRecord>> loadStaffRecords() async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot =
+        await _collection(FirestorePaths.staffRecords).get();
+
+    final List<StaffRecord> records = snapshot.docs
+        .map((DocumentSnapshot<Map<String, dynamic>> d) =>
+            StaffRecordSerialisation.fromMap(d.data(), d.id))
+        .toList()
+      ..sort((StaffRecord a, StaffRecord b) => b.timeIn.compareTo(a.timeIn));
+
+    return records;
+  }
+
+  @override
+  Future<WriteFailure?> saveStaffRecord(StaffRecord record) => _guard(
+        'save staff record for ${record.staffName}',
+        () => _collection(FirestorePaths.staffRecords)
+            .doc(FirestorePaths.staffRecordDoc(record.id))
+            .set(record.toMap()),
+      );
 
   // --- settings -----------------------------------------------------------
 

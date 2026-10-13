@@ -12,6 +12,7 @@ import '../data/models/order.dart';
 import '../data/models/settings.dart';
 import '../data/models/shift_event.dart';
 import '../data/models/staff.dart';
+import '../data/models/staff_record.dart';
 import '../services/in_app_alert.dart';
 import '../services/staff_qr.dart';
 
@@ -67,13 +68,20 @@ class AdminProvider extends ChangeNotifier {
   final InAppAlertPresenter _alerts;
 
   StreamSubscription<AdminSnapshot>? _subscription;
+  StreamSubscription<List<StaffRecord>>? _recordsSubscription;
   bool _bound = false;
   bool _loaded = false;
   WriteFailure? _failure;
 
   List<Order> _orders;
   List<StaffMember> _staff;
+  List<StaffRecord> _staffRecords = const <StaffRecord>[];
   DateTime _today;
+
+  /// Staff ids with a badge mint in flight, so two thumbnails building in the
+  /// same frame cannot both mint one — the second mint would replace the first
+  /// token and kill the badge the user just saw.
+  final Set<String> _minting = <String>{};
 
   /// True once a live backend has answered.
   bool get isLive => _repository.isLive;
@@ -104,7 +112,13 @@ class AdminProvider extends ChangeNotifier {
         final bool firstLoad = !_loaded;
 
         _orders = snapshot.orders;
-        _staff = snapshot.staff;
+        // Merge rather than replace: a roster snapshot can arrive without a
+        // token this device already minted (a slow/offline mirror of the write,
+        // or a roster seeded before badges). Replacing would drop the token and
+        // the next build would mint a *new* one, invalidating every badge
+        // already printed. Regenerate is the only thing allowed to change a
+        // token.
+        _staff = _mergeStaffTokens(snapshot.staff);
         _settings = snapshot.settings;
         _loaded = true;
 
@@ -120,6 +134,45 @@ class AdminProvider extends ChangeNotifier {
         notifyListeners();
       },
     );
+
+    _recordsSubscription = _repository.watchStaffRecords().listen(
+      (List<StaffRecord> records) {
+        _staffRecords = records;
+        notifyListeners();
+      },
+      onError: (Object error) {
+        _failure = describeFailure('watch the staff record', error);
+        logWriteFailure(_failure!);
+        notifyListeners();
+      },
+    );
+
+    // The record stream above is a broadcast that may not replay an existing
+    // board (the in-memory repository emits only on write), so prime the table
+    // with one read.
+    unawaited(loadStaffRecordsOnce());
+  }
+
+  /// Keeps a locally-known badge token when an incoming roster omits it.
+  ///
+  /// See [bind] for why this is load-bearing. Returns [incoming] untouched when
+  /// there is nothing to merge.
+  List<StaffMember> _mergeStaffTokens(List<StaffMember> incoming) {
+    final Map<String, ({String token, DateTime? issuedAt})> known =
+        <String, ({String token, DateTime? issuedAt})>{
+      for (final StaffMember s in _staff)
+        if (s.qrToken != null && s.qrToken!.isNotEmpty)
+          s.id: (token: s.qrToken!, issuedAt: s.qrIssuedAt),
+    };
+    if (known.isEmpty) return incoming;
+
+    return <StaffMember>[
+      for (final StaffMember s in incoming)
+        if ((s.qrToken == null || s.qrToken!.isEmpty) && known.containsKey(s.id))
+          s.copyWith(qrToken: known[s.id]!.token, qrIssuedAt: known[s.id]!.issuedAt)
+        else
+          s,
+    ];
   }
 
   /// Shows a banner for the newest order the café had not seen yet.
@@ -141,6 +194,7 @@ class AdminProvider extends ChangeNotifier {
   @override
   void dispose() {
     _subscription?.cancel();
+    _recordsSubscription?.cancel();
     super.dispose();
   }
 
@@ -318,18 +372,29 @@ class AdminProvider extends ChangeNotifier {
     final int i = _staff.indexWhere((StaffMember s) => s.id == staffId);
     if (i < 0) return;
 
+    final StaffMember prev = _staff[i];
+    final bool wasWorking = prev.shift.isWorking;
+    final bool nowWorking = shift.isWorking;
+
     // `since` is stamped locally rather than in the serialiser, because the
     // client clock is the only one available at the moment the toggle is tapped.
     // A phone with a wrong clock produces a wrong shift start, which is a
     // cosmetic inaccuracy — better than refusing the write.
-    final StaffMember next = _staff[i].copyWith(
+    final StaffMember next = prev.copyWith(
       shift: shift,
-      since: shift.isWorking ? DateTime.now() : null,
+      since: nowWorking ? DateTime.now() : null,
     );
     _staff = <StaffMember>[..._staff]..[i] = next;
     notifyListeners();
     unawaited(_repository.saveStaffMember(next).then(_recordFailure));
     _logShiftEvent(next, method);
+
+    // Only a genuine transition opens or closes a session. A same-state write
+    // (re-scanning while already clocked in, or a rider being set to "on
+    // delivery") must not stack a second Staff Record row.
+    if (wasWorking != nowWorking) {
+      _recordShift(next, clockingIn: nowWorking, method: method);
+    }
   }
 
   /// Flips a member between on-shift and off-shift.
@@ -376,6 +441,102 @@ class AdminProvider extends ChangeNotifier {
     unawaited(_repository.saveShiftEvent(event).then(_recordFailure));
   }
 
+  // --- staff record (in / out sessions) -----------------------------------
+
+  /// Every attendance session, newest first. Streamed from the repository while
+  /// the panel is bound.
+  List<StaffRecord> get staffRecords => _staffRecords;
+
+  /// The running session for [staffId], or null when they are not clocked in.
+  StaffRecord? openRecordFor(String staffId) {
+    for (final StaffRecord r in _staffRecords) {
+      if (r.staffId == staffId && r.isOpen) return r;
+    }
+    return null;
+  }
+
+  /// Pulls the record table once. Called by the Staff Record screen on open, so
+  /// the table is populated even before the live stream has emitted.
+  Future<void> loadStaffRecordsOnce() async {
+    try {
+      final List<StaffRecord> records = await _repository.loadStaffRecords();
+      _staffRecords = records;
+      notifyListeners();
+    } catch (error) {
+      // A denied or failed read must not escape as an unhandled async error: it
+      // is surfaced through the same banner path as every other repository
+      // failure, so an operator sees "could not load" rather than a blank table.
+      _failure = describeFailure('load the staff record', error);
+      logWriteFailure(_failure!);
+      notifyListeners();
+    }
+  }
+
+  /// Opens a session on clock-in, or closes the open one on clock-out.
+  ///
+  /// The write is best-effort like every other: a failed record must not undo
+  /// the shift the operator just watched change.
+  void _recordShift(
+    StaffMember member, {
+    required bool clockingIn,
+    required ShiftEventMethod method,
+  }) {
+    final StaffRecordMethod recordMethod =
+        method == ShiftEventMethod.qr ? StaffRecordMethod.qr : StaffRecordMethod.manual;
+    final DateTime now = DateTime.now();
+
+    final StaffRecord record;
+    if (clockingIn) {
+      record = StaffRecord(
+        id: mintStaffRecordId(),
+        staffId: member.id,
+        staffName: member.name,
+        role: member.role,
+        dateKey: StaffRecord.dateKeyFor(now),
+        timeIn: now,
+        method: recordMethod,
+      );
+    } else {
+      final StaffRecord? open = openRecordFor(member.id);
+      if (open != null) {
+        record = open.close(now);
+      } else {
+        // A clock-out with no open session — a roster seeded mid-shift, or an
+        // out scan after the session was closed elsewhere. Still log the row so
+        // the out is not lost, with both ends pinned to the same instant.
+        record = StaffRecord(
+          id: mintStaffRecordId(),
+          staffId: member.id,
+          staffName: member.name,
+          role: member.role,
+          dateKey: StaffRecord.dateKeyFor(now),
+          timeIn: now,
+          timeOut: now,
+          status: StaffRecordStatus.completed,
+          method: recordMethod,
+        );
+      }
+    }
+
+    _upsertRecordLocal(record);
+    unawaited(_repository.saveStaffRecord(record).then(_recordFailure));
+  }
+
+  /// Applies a session to the local table before the write lands, so the row
+  /// appears the moment the scan is accepted.
+  void _upsertRecordLocal(StaffRecord record) {
+    final int i = _staffRecords.indexWhere((StaffRecord r) => r.id == record.id);
+    final List<StaffRecord> next = <StaffRecord>[..._staffRecords];
+    if (i >= 0) {
+      next[i] = record;
+    } else {
+      next.add(record);
+    }
+    next.sort((StaffRecord a, StaffRecord b) => b.timeIn.compareTo(a.timeIn));
+    _staffRecords = next;
+    notifyListeners();
+  }
+
   // --- staff badges -------------------------------------------------------
 
   /// Gives [staffId] a badge token if they do not already have one.
@@ -385,12 +546,30 @@ class AdminProvider extends ChangeNotifier {
   /// launch would be a write storm for a feature nobody has opened. Called from
   /// the badge widget, once, the first time it is built.
   Future<void> ensureStaffQr(String staffId) async {
+    // One mint at a time per member. Without this, two thumbnails building in
+    // the same frame both see a null token and both mint — the second write
+    // replaces the first, so the badge already on screen is suddenly stale.
+    if (_minting.contains(staffId)) return;
+
+    // Do not mint against a roster we have not read yet. On a live backend the
+    // provider starts on the bundled mock roster, whose members carry no tokens;
+    // the first staff-section build would otherwise mint and persist a fresh
+    // token for a member who already has one, silently invalidating the badge
+    // that is already printed and on someone's lanyard. Wait for the first real
+    // snapshot (which sets `_loaded`), then the thumbnail re-requests.
+    if (_repository.isLive && !_loaded) return;
+
     final int i = _staff.indexWhere((StaffMember s) => s.id == staffId);
     if (i < 0) return;
     final String? existing = _staff[i].qrToken;
     if (existing != null && existing.isNotEmpty) return;
 
-    await _mintStaffQr(i);
+    _minting.add(staffId);
+    try {
+      await _mintStaffQr(i);
+    } finally {
+      _minting.remove(staffId);
+    }
   }
 
   /// Issues a brand-new token, invalidating any badge already printed.
@@ -428,8 +607,19 @@ class AdminProvider extends ChangeNotifier {
     if (member == null) {
       return const StaffClockResult(StaffClockOutcome.unknownStaff);
     }
+
+    final String? held = member.qrToken;
+    if (held == null || held.isEmpty) {
+      // The member is on the roster but this device has not seen their token:
+      // a roster that predates badges, or a kiosk whose copy is behind. That is
+      // not a stale badge, and saying so would send the operator to print a
+      // badge that is already correct. Pull the roster once (best-effort) so
+      // the next scan succeeds, and report it distinctly.
+      unawaited(_refreshRoster());
+      return StaffClockResult(StaffClockOutcome.badgeNotIssued, staffName: member.name);
+    }
     if (!verifyStaffToken(member, payload.token)) {
-      return const StaffClockResult(StaffClockOutcome.staleBadge);
+      return StaffClockResult(StaffClockOutcome.staleBadge, staffName: member.name);
     }
 
     final bool nowWorking = !member.shift.isWorking;
@@ -441,6 +631,21 @@ class AdminProvider extends ChangeNotifier {
       staffName: member.name,
       at: DateTime.now(),
     );
+  }
+
+  /// Re-reads the roster to heal a badge token this device has not seen yet.
+  ///
+  /// Best-effort and non-blocking: the scan result is already on screen, and the
+  /// live stream will heal on its own once the connection returns.
+  Future<void> _refreshRoster() async {
+    try {
+      final AdminSnapshot snapshot = await _repository.loadAdmin();
+      if (snapshot.isEmpty) return;
+      _staff = _mergeStaffTokens(snapshot.staff);
+      notifyListeners();
+    } catch (_) {
+      // Swallowed on purpose: this is a retry hook, not a user-visible action.
+    }
   }
 
   /// One member's recent attendance, newest first.

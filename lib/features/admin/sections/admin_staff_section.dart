@@ -11,6 +11,7 @@ import '../../../state/admin_provider.dart';
 import '../admin_dashboard_screen.dart';
 import '../staff_qr_scanner.dart';
 import '../staff_qr_sheet.dart';
+import '../staff_record_screen.dart';
 import 'admin_overview_section.dart';
 
 /// Who is on the floor, what they can reach, and whether their shift is
@@ -83,6 +84,22 @@ class _AdminStaffSectionState extends State<AdminStaffSection> {
                 ),
               ),
             ],
+          ),
+        ),
+
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            BwSpacing.gutter,
+            0,
+            BwSpacing.gutter,
+            BwSpacing.sm,
+          ),
+          child: BwButton(
+            label: 'Staff Record',
+            icon: Icons.assignment_outlined,
+            variant: BwButtonVariant.outlined,
+            height: 46,
+            onPressed: () => openStaffRecord(context),
           ),
         ),
 

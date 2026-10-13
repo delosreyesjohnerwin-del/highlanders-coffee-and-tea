@@ -796,6 +796,28 @@ void main() {
       expect(find.text('Recent shifts'), findsOneWidget);
     });
 
+    testWidgets('the Staff Record button opens the attendance table',
+        (WidgetTester tester) async {
+      await usePhone(tester);
+      await pumpApp(tester, home: const AdminDashboardScreen(
+        initialSection: AdminSection.staff,
+      ));
+
+      // The button sits directly below the "On shift now" / "Riders free" stats.
+      final Finder recordButton = find.text('Staff Record');
+      expect(recordButton, findsOneWidget);
+
+      await tester.tap(recordButton);
+      await tester.pumpAndSettle();
+
+      // A pushed full screen, not a sheet. A fresh memory repository has logged
+      // no shifts, so the table shows its empty state rather than columns.
+      expect(find.text('Staff Record'), findsOneWidget); // the pushed title
+      expect(find.text('Active shifts'), findsOneWidget);
+      expect(find.text('Sessions today'), findsOneWidget);
+      expect(find.textContaining('No shifts recorded'), findsOneWidget);
+    });
+
     testWidgets('promos section lists promotions and pauses one',
         (WidgetTester tester) async {
       await usePhone(tester);

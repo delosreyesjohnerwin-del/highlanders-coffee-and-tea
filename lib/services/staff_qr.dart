@@ -61,6 +61,13 @@ String mintStaffToken() => _toHex(
 String mintShiftEventId() =>
     'ev-${DateTime.now().microsecondsSinceEpoch}-${_rng.nextInt(1 << 32).toRadixString(16)}';
 
+/// A fresh id for a staff attendance-session document.
+///
+/// Same shape as [mintShiftEventId], with its own prefix so a record and an
+/// event can never be mistaken for one another in a log.
+String mintStaffRecordId() =>
+    'rec-${DateTime.now().microsecondsSinceEpoch}-${_rng.nextInt(1 << 32).toRadixString(16)}';
+
 /// The URI a badge should encode, or null when the member has no token yet.
 Uri? staffQrUri(StaffMember member) {
   final String? token = member.qrToken;
@@ -121,9 +128,15 @@ StaffQrPayload? parseStaffQr(String raw) {
 ///
 /// A member with no token verifies nothing: an un-minted badge cannot be
 /// scanned into a shift until it has been displayed once and persisted.
+///
+/// The comparison is a plain equality check and there is deliberately **no time
+/// component**: a badge does not expire. It stays valid until an admin presses
+/// Regenerate, which is the only thing that changes the token. A scanner that
+/// rejected badges for age would break every printed badge overnight for no
+/// security gain.
 bool verifyStaffToken(StaffMember member, String token) {
   final String? held = member.qrToken;
-  return held != null && held.isNotEmpty && held == token;
+  return held != null && held.isNotEmpty && held.trim() == token.trim();
 }
 
 /// How a scan resolved.
@@ -137,6 +150,11 @@ enum StaffClockOutcome {
   /// The badge's token did not match the member's current token — an old,
   /// revoked badge, or a forgery.
   staleBadge,
+
+  /// The badge names a roster member who has no badge minted on this device
+  /// yet: a roster that predates badges, or a kiosk whose roster has not caught
+  /// up. Not a stale badge — the token is unknown here, not wrong.
+  badgeNotIssued,
 
   /// The scanned string was not a Highlanders badge at all.
   notABadge,
@@ -155,11 +173,19 @@ class StaffClockResult {
       outcome == StaffClockOutcome.clockedIn || outcome == StaffClockOutcome.clockedOut;
 
   /// The line the scanner shows the operator.
+  ///
+  /// Clock actions are worded as the record they write — TIME IN / TIME OUT —
+  /// so the banner matches the Staff Record row it just created. A badge is
+  /// never rejected for being old in time: a token is valid until an admin
+  /// regenerates it.
   String get message => switch (outcome) {
-        StaffClockOutcome.clockedIn => '$staffName clocked in',
-        StaffClockOutcome.clockedOut => '$staffName clocked out',
-        StaffClockOutcome.unknownStaff => 'That badge is not on the roster',
-        StaffClockOutcome.staleBadge => 'That badge is out of date — print a new one',
+        StaffClockOutcome.clockedIn => 'TIME IN · $staffName',
+        StaffClockOutcome.clockedOut => 'TIME OUT · $staffName',
+        StaffClockOutcome.unknownStaff => 'That badge is not on the staff roster',
+        StaffClockOutcome.staleBadge =>
+          "$staffName's badge was replaced — print the newest one",
+        StaffClockOutcome.badgeNotIssued =>
+          'No badge on file for $staffName here — open their badge in Staff once',
         StaffClockOutcome.notABadge => 'Not a Highlanders staff badge',
       };
 }

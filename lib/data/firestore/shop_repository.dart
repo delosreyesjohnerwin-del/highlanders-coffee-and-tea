@@ -5,6 +5,7 @@ import '../models/payment.dart';
 import '../models/settings.dart';
 import '../models/shift_event.dart';
 import '../models/staff.dart';
+import '../models/staff_record.dart';
 import 'firestore_errors.dart';
 
 /// Everything the app needs to persist, in one interface.
@@ -66,6 +67,22 @@ abstract class ShopRepository {
 
   /// The most recent [limit] entries for one staff member, newest first.
   Future<List<ShiftEvent>> loadShiftEvents(String staffId, {int limit = 20});
+
+  /// Every attendance session, newest first.
+  ///
+  /// Streamed because the Staff Record table is a live board: a scan on another
+  /// kiosk should appear without a pull-to-refresh.
+  Stream<List<StaffRecord>> watchStaffRecords();
+
+  /// A one-shot read of every attendance session, newest first.
+  Future<List<StaffRecord>> loadStaffRecords();
+
+  /// Creates or updates one attendance session.
+  ///
+  /// Upsert rather than append: a clock-in writes a new document, a clock-out
+  /// rewrites that same document with its `timeOut`. Keyed by the record's own
+  /// minted id, so a re-send overwrites rather than duplicating a session.
+  Future<WriteFailure?> saveStaffRecord(StaffRecord record);
 
   // --- settings -----------------------------------------------------------
 
